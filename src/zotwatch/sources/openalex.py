@@ -75,10 +75,7 @@ class OpenAlexSource(BaseSource):
             identifier=work_id or item.get("doi") or title,
             title=title,
             abstract=_extract_openalex_abstract(item),
-            authors=[
-                auth.get("author", {}).get("display_name", "")
-                for auth in item.get("authorships", [])
-            ],
+            authors=[auth.get("author", {}).get("display_name", "") for auth in item.get("authorships", [])],
             doi=item.get("doi"),
             url=source_info.get("url") or landing_page,
             published=parse_date(item.get("publication_date")),

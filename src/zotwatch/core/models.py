@@ -39,8 +39,7 @@ class ZoteroItem(BaseModel):
         """Parse item from Zotero API response."""
         data = item.get("data", {})
         creators = [
-            " ".join(filter(None, [c.get("firstName"), c.get("lastName")])).strip()
-            for c in data.get("creators", [])
+            " ".join(filter(None, [c.get("firstName"), c.get("lastName")])).strip() for c in data.get("creators", [])
         ]
         return cls(
             key=data.get("key") or item.get("key"),

@@ -13,118 +13,166 @@ logger = logging.getLogger(__name__)
 
 # Fallback template when no external template is available
 _FALLBACK_TEMPLATE = """<!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ZotWatch Report - {{ generated_at.strftime('%Y-%m-%d') }}</title>
+  <title>ZotWatch 文献推荐 - {{ generated_at.strftime('%Y-%m-%d') }}</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            'bg-primary': '#f8fafc',
+            'bg-card': '#ffffff',
+            'bg-hover': '#f1f5f9',
+            'text-primary': '#1e293b',
+            'text-secondary': '#64748b',
+            'border-color': '#e2e8f0',
+            'accent': '#2563eb',
+            'accent-hover': '#1d4ed8',
+          }
+        }
+      }
+    }
+  </script>
   <style>
-    .summary-expand { transition: max-height 0.3s ease-out; overflow: hidden; }
-    .summary-expand.collapsed { max-height: 0; }
-    .summary-expand.expanded { max-height: 2000px; }
+    .section-expand { transition: max-height 0.3s ease-out; overflow: hidden; }
+    .section-expand.collapsed { max-height: 0; }
+    .section-expand.expanded { max-height: 3000px; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }
   </style>
 </head>
-<body class="bg-gray-50 min-h-screen">
-  <header class="bg-white shadow-sm border-b">
-    <div class="max-w-6xl mx-auto px-4 py-6">
-      <h1 class="text-2xl font-bold text-gray-900">ZotWatch Recommendations</h1>
-      <p class="text-sm text-gray-500 mt-1">{{ works|length }} papers | Generated {{ generated_at.strftime('%B %d, %Y at %H:%M UTC') }}</p>
+<body class="bg-bg-primary min-h-screen text-text-primary">
+  <header class="bg-bg-card border-b border-border-color">
+    <div class="max-w-4xl mx-auto px-4 py-6">
+      <h1 class="text-2xl font-bold text-text-primary">ZotWatch 文献推荐</h1>
+      <p class="text-sm text-text-secondary mt-1">共 {{ works|length }} 篇论文 · 生成于 {{ generated_at.strftime('%Y年%m月%d日 %H:%M') }}</p>
     </div>
   </header>
 
-  <main class="max-w-6xl mx-auto px-4 py-8">
-    <div class="mb-6 flex items-center justify-end gap-2">
-      <button onclick="expandAll()" class="px-3 py-1 text-sm text-blue-600 hover:text-blue-800 border border-blue-200 rounded">Expand All</button>
-      <button onclick="collapseAll()" class="px-3 py-1 text-sm text-blue-600 hover:text-blue-800 border border-blue-200 rounded">Collapse All</button>
+  <main class="max-w-4xl mx-auto px-4 py-8">
+    <div class="mb-6 flex items-center justify-between">
+      <p class="text-sm text-text-secondary">按相关性评分排序，点击标题查看原文</p>
+      <div class="flex gap-2">
+        <button onclick="expandAll()" class="px-3 py-1.5 text-sm text-accent hover:text-accent-hover bg-bg-card border border-border-color rounded-md transition-colors">全部展开</button>
+        <button onclick="collapseAll()" class="px-3 py-1.5 text-sm text-accent hover:text-accent-hover bg-bg-card border border-border-color rounded-md transition-colors">全部折叠</button>
+      </div>
     </div>
 
-    <div class="grid gap-6">
+    <div class="grid gap-5">
       {% for work in works %}
-      <article class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-        <div class="p-6">
+      <article class="bg-bg-card rounded-lg border border-border-color overflow-hidden hover:border-accent/50 transition-colors">
+        <div class="p-5">
+          <!-- 标题和元信息 -->
           <div class="flex items-start justify-between mb-3">
             <div class="flex-1">
-              <div class="flex items-center gap-2 mb-2">
-                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
-                  {% if work.label == 'must_read' %}bg-green-100 text-green-800
-                  {% elif work.label == 'consider' %}bg-yellow-100 text-yellow-800
-                  {% else %}bg-gray-100 text-gray-800{% endif %}">
-                  {{ work.label | replace('_', ' ') | title }}
+              <div class="flex items-center gap-2 mb-2 flex-wrap">
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-medium
+                  {% if work.label == 'must_read' %}bg-green-100 text-green-700 border border-green-300
+                  {% elif work.label == 'consider' %}bg-amber-100 text-amber-700 border border-amber-300
+                  {% else %}bg-bg-hover text-text-secondary border border-border-color{% endif %}">
+                  {% if work.label == 'must_read' %}必读{% elif work.label == 'consider' %}推荐{% else %}参考{% endif %}
                 </span>
-                <span class="text-xs text-gray-500">Score: {{ '%.3f'|format(work.score) }}</span>
-                <span class="text-xs text-gray-400">|</span>
-                <span class="text-xs text-gray-500">{{ work.source }}</span>
+                <span class="text-xs text-text-secondary">评分 {{ '%.2f'|format(work.score) }}</span>
+                <span class="text-xs text-text-secondary">·</span>
+                <span class="text-xs text-text-secondary">{{ work.source }}</span>
               </div>
-              <h2 class="text-lg font-semibold text-gray-900 leading-tight">
-                <a href="{{ work.url or '#' }}" target="_blank" class="hover:text-blue-600">
+              <h2 class="text-lg font-semibold text-text-primary leading-tight">
+                <a href="{{ work.url or '#' }}" target="_blank" rel="noopener" class="hover:text-accent transition-colors">
                   {{ work.title }}
                 </a>
               </h2>
             </div>
-            <div class="ml-4 text-right text-sm text-gray-500">
-              <div>{{ work.published.strftime('%Y-%m-%d') if work.published else 'Unknown' }}</div>
-              <div class="text-xs">{{ work.venue or 'Unknown venue' }}</div>
+            <div class="ml-4 text-right text-sm text-text-secondary flex-shrink-0">
+              <div class="font-medium">{{ work.published.strftime('%Y-%m-%d') if work.published else '未知' }}</div>
+              <div class="text-xs text-text-secondary max-w-[150px] truncate" title="{{ work.venue or '' }}">{{ work.venue or '未知来源' }}</div>
             </div>
           </div>
 
-          <p class="text-sm text-gray-600 mb-3">
-            {{ work.authors[:5] | join(', ') }}{% if work.authors|length > 5 %} et al.{% endif %}
+          <!-- 作者 -->
+          <p class="text-sm text-text-secondary mb-4">
+            {{ work.authors[:5] | join('，') }}{% if work.authors|length > 5 %} 等{% endif %}
           </p>
 
-          {% if work.summary %}
-          <div class="bg-blue-50 rounded-lg p-4 mb-3">
-            <h3 class="text-sm font-medium text-blue-900 mb-2 flex items-center">
-              <svg class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>
+          <!-- 原文摘要 -->
+          {% if work.abstract %}
+          <div class="bg-bg-hover/50 rounded-lg p-4 mb-4 border border-border-color">
+            <button id="btn-abstract-{{ loop.index }}" onclick="toggleSection('abstract-{{ loop.index }}')"
+                    class="w-full text-left text-sm font-medium text-text-primary flex items-center justify-between">
+              <span class="flex items-center">
+                <svg class="w-4 h-4 mr-1.5 text-text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                </svg>
+                原文摘要
+              </span>
+              <svg class="w-4 h-4 text-text-secondary transform transition-transform" id="icon-abstract-{{ loop.index }}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
               </svg>
-              AI Summary
-            </h3>
-            <ul class="text-sm text-blue-800 space-y-1 list-disc list-inside">
-              <li><strong>Question:</strong> {{ work.summary.bullets.research_question }}</li>
-              <li><strong>Method:</strong> {{ work.summary.bullets.methodology }}</li>
-              <li><strong>Findings:</strong> {{ work.summary.bullets.key_findings }}</li>
-              <li><strong>Innovation:</strong> {{ work.summary.bullets.innovation }}</li>
-              {% if work.summary.bullets.relevance_note %}
-              <li><strong>Relevance:</strong> {{ work.summary.bullets.relevance_note }}</li>
-              {% endif %}
-            </ul>
+            </button>
+            <div id="abstract-{{ loop.index }}" class="section-expand collapsed">
+              <p class="text-sm text-text-secondary mt-3 leading-relaxed">{{ work.abstract }}</p>
+            </div>
+          </div>
+          {% endif %}
 
-            <div class="mt-3">
-              <button id="btn-{{ loop.index }}" onclick="toggleSummary({{ loop.index }})"
-                      class="text-xs text-blue-600 hover:text-blue-800 font-medium">
-                Show Details
+          <!-- AI 总结 -->
+          {% if work.summary %}
+          <div class="bg-accent/10 rounded-lg p-4 mb-4 border border-accent/30">
+            <h3 class="text-sm font-semibold text-accent mb-3 flex items-center">
+              <svg class="w-4 h-4 mr-1.5" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 2a2 2 0 012 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 017 7h1a1 1 0 011 1v3a1 1 0 01-1 1h-1v1a2 2 0 01-2 2H5a2 2 0 01-2-2v-1H2a1 1 0 01-1-1v-3a1 1 0 011-1h1a7 7 0 017-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 012-2zm-3 9a1 1 0 100 2 1 1 0 000-2zm6 0a1 1 0 100 2 1 1 0 000-2zm-3 4c-1.1 0-2.1.45-2.83 1.17l1.41 1.41A2 2 0 0012 17a2 2 0 001.42.59l1.41-1.42A4 4 0 0012 15z"/>
+              </svg>
+              AI 总结
+            </h3>
+            <div class="space-y-2 text-sm text-text-primary">
+              <p><span class="font-medium text-accent">研究问题：</span>{{ work.summary.bullets.research_question }}</p>
+              <p><span class="font-medium text-accent">研究方法：</span>{{ work.summary.bullets.methodology }}</p>
+              <p><span class="font-medium text-accent">主要发现：</span>{{ work.summary.bullets.key_findings }}</p>
+              <p><span class="font-medium text-accent">创新点：</span>{{ work.summary.bullets.innovation }}</p>
+              {% if work.summary.bullets.relevance_note %}
+              <p><span class="font-medium text-accent">相关性：</span>{{ work.summary.bullets.relevance_note }}</p>
+              {% endif %}
+            </div>
+
+            <div class="mt-3 pt-3 border-t border-accent/30">
+              <button id="btn-detail-{{ loop.index }}" onclick="toggleSection('detail-{{ loop.index }}')"
+                      class="text-xs text-accent hover:text-accent-hover font-medium flex items-center">
+                <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                </svg>
+                查看详细分析
               </button>
-              <div id="summary-{{ loop.index }}" class="summary-expand collapsed mt-2">
-                <div class="bg-white rounded p-3 text-sm text-gray-700 space-y-2">
-                  <p><strong>Background:</strong> {{ work.summary.detailed.background }}</p>
-                  <p><strong>Methodology:</strong> {{ work.summary.detailed.methodology_details }}</p>
-                  <p><strong>Results:</strong> {{ work.summary.detailed.results }}</p>
-                  <p><strong>Limitations:</strong> {{ work.summary.detailed.limitations }}</p>
+              <div id="detail-{{ loop.index }}" class="section-expand collapsed mt-3">
+                <div class="bg-bg-card rounded-lg p-4 text-sm text-text-primary space-y-3 border border-border-color">
+                  <p><span class="font-medium text-text-primary">研究背景：</span>{{ work.summary.detailed.background }}</p>
+                  <p><span class="font-medium text-text-primary">方法详情：</span>{{ work.summary.detailed.methodology_details }}</p>
+                  <p><span class="font-medium text-text-primary">研究结果：</span>{{ work.summary.detailed.results }}</p>
+                  <p><span class="font-medium text-text-primary">局限性：</span>{{ work.summary.detailed.limitations }}</p>
                   {% if work.summary.detailed.future_directions %}
-                  <p><strong>Future Directions:</strong> {{ work.summary.detailed.future_directions }}</p>
+                  <p><span class="font-medium text-text-primary">未来方向：</span>{{ work.summary.detailed.future_directions }}</p>
                   {% endif %}
-                  <p class="text-blue-700"><strong>Why Relevant:</strong> {{ work.summary.detailed.relevance_to_interests }}</p>
+                  <p class="text-accent"><span class="font-medium">研究相关性：</span>{{ work.summary.detailed.relevance_to_interests }}</p>
                 </div>
               </div>
             </div>
           </div>
-          {% elif work.abstract %}
-          <p class="text-sm text-gray-700 mb-3 line-clamp-4">{{ work.abstract }}</p>
           {% endif %}
 
-          <div class="mt-4 pt-4 border-t border-gray-100">
-            <div class="flex flex-wrap gap-4 text-xs text-gray-500">
-              <span>Similarity: {{ '%.2f'|format(work.similarity) }}</span>
-              <span>Recency: {{ '%.2f'|format(work.recency_score) }}</span>
+          <!-- 评分详情 -->
+          <div class="pt-4 border-t border-border-color">
+            <div class="flex flex-wrap gap-3 text-xs">
+              <span class="px-2 py-1 bg-bg-hover rounded text-text-secondary">相似度 {{ '%.2f'|format(work.similarity) }}</span>
+              <span class="px-2 py-1 bg-bg-hover rounded text-text-secondary">时效性 {{ '%.2f'|format(work.recency_score) }}</span>
               {% if work.journal_sjr %}
-              <span>SJR: {{ '%.2f'|format(work.journal_sjr) }}</span>
+              <span class="px-2 py-1 bg-bg-hover rounded text-text-secondary">SJR {{ '%.2f'|format(work.journal_sjr) }}</span>
               {% endif %}
               {% if work.author_bonus > 0 %}
-              <span class="text-green-600">Author Match</span>
+              <span class="px-2 py-1 bg-green-100 rounded text-green-700">关注作者</span>
               {% endif %}
               {% if work.venue_bonus > 0 %}
-              <span class="text-green-600">Venue Match</span>
+              <span class="px-2 py-1 bg-green-100 rounded text-green-700">关注期刊</span>
               {% endif %}
             </div>
           </div>
@@ -134,39 +182,56 @@ _FALLBACK_TEMPLATE = """<!DOCTYPE html>
     </div>
   </main>
 
-  <footer class="bg-white border-t mt-12">
-    <div class="max-w-6xl mx-auto px-4 py-4 text-center text-sm text-gray-500">
-      Generated by <a href="https://github.com/zotwatch/zotwatch" class="text-blue-600 hover:underline">ZotWatch</a>
+  <footer class="bg-bg-card border-t border-border-color mt-12">
+    <div class="max-w-4xl mx-auto px-4 py-6 text-center text-sm text-text-secondary">
+      由 <a href="https://github.com/zotwatch/zotwatch" class="text-accent hover:text-accent-hover transition-colors">ZotWatch</a> 生成
     </div>
   </footer>
 
   <script>
-    function toggleSummary(id) {
-      const el = document.getElementById('summary-' + id);
+    function toggleSection(id) {
+      const el = document.getElementById(id);
       const btn = document.getElementById('btn-' + id);
+      const icon = document.getElementById('icon-' + id);
       if (el.classList.contains('collapsed')) {
         el.classList.remove('collapsed');
         el.classList.add('expanded');
-        btn.textContent = 'Hide Details';
+        if (btn.textContent.includes('详细分析')) {
+          btn.innerHTML = '<svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>收起详细分析';
+        }
+        if (icon) icon.style.transform = 'rotate(180deg)';
       } else {
         el.classList.remove('expanded');
         el.classList.add('collapsed');
-        btn.textContent = 'Show Details';
+        if (btn.textContent.includes('详细分析')) {
+          btn.innerHTML = '<svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>查看详细分析';
+        }
+        if (icon) icon.style.transform = 'rotate(0deg)';
       }
     }
     function expandAll() {
-      document.querySelectorAll('.summary-expand').forEach(el => {
+      document.querySelectorAll('.section-expand').forEach(el => {
         el.classList.remove('collapsed');
         el.classList.add('expanded');
       });
-      document.querySelectorAll('[id^="btn-"]').forEach(btn => btn.textContent = 'Hide Details');
+      document.querySelectorAll('[id^="btn-detail-"]').forEach(btn => {
+        btn.innerHTML = '<svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>收起详细分析';
+      });
+      document.querySelectorAll('[id^="icon-abstract-"]').forEach(icon => {
+        icon.style.transform = 'rotate(180deg)';
+      });
     }
     function collapseAll() {
-      document.querySelectorAll('.summary-expand').forEach(el => {
+      document.querySelectorAll('.section-expand').forEach(el => {
         el.classList.remove('expanded');
         el.classList.add('collapsed');
       });
-      document.querySelectorAll('[id^="btn-"]').forEach(btn => btn.textContent = 'Show Details');
+      document.querySelectorAll('[id^="btn-detail-"]').forEach(btn => {
+        btn.innerHTML = '<svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>查看详细分析';
+      });
+      document.querySelectorAll('[id^="icon-abstract-"]').forEach(icon => {
+        icon.style.transform = 'rotate(0deg)';
+      });
     }
   </script>
 </body>

@@ -57,9 +57,7 @@ class DedupeEngine:
                 continue
 
             # Check title similarity
-            if self._is_title_duplicate(title) or _is_title_in_list(
-                title, candidate_titles, self.title_threshold
-            ):
+            if self._is_title_duplicate(title) or _is_title_in_list(title, candidate_titles, self.title_threshold):
                 logger.debug("Skipping %s due to title similarity", work.identifier)
                 continue
 

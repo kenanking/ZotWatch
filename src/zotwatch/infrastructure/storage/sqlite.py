@@ -3,7 +3,7 @@
 import json
 import sqlite3
 from pathlib import Path
-from typing import Iterable, List, Optional, Tuple
+from typing import Iterable, List, Optional
 
 from zotwatch.core.models import PaperSummary, ZoteroItem
 
@@ -22,8 +22,6 @@ CREATE TABLE IF NOT EXISTS items (
     url TEXT,
     raw_json TEXT NOT NULL,
     content_hash TEXT,
-    embedding BLOB,
-    embedding_hash TEXT,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -43,12 +41,17 @@ CREATE TABLE IF NOT EXISTS summaries (
 );
 
 CREATE INDEX IF NOT EXISTS idx_items_version ON items(version);
+CREATE INDEX IF NOT EXISTS idx_items_content_hash ON items(content_hash);
 CREATE INDEX IF NOT EXISTS idx_summaries_expires ON summaries(expires_at);
 """
 
 
 class ProfileStorage:
-    """SQLite storage for profile data."""
+    """SQLite storage for profile data.
+
+    Note: Embedding storage has been moved to EmbeddingCache.
+    This class now focuses on item metadata and summaries.
+    """
 
     def __init__(self, path: Path | str):
         self.path = Path(path)
@@ -66,7 +69,51 @@ class ProfileStorage:
         """Initialize database schema."""
         conn = self.connect()
         conn.executescript(SCHEMA)
+        # Migrate: drop old embedding columns if they exist
+        self._migrate_drop_embedding_columns()
         conn.commit()
+
+    def _migrate_drop_embedding_columns(self) -> None:
+        """Drop deprecated embedding columns from items table."""
+        conn = self.connect()
+        # Check if old columns exist
+        cur = conn.execute("PRAGMA table_info(items)")
+        columns = {row["name"] for row in cur.fetchall()}
+
+        if "embedding" in columns or "embedding_hash" in columns:
+            # SQLite doesn't support DROP COLUMN directly in older versions
+            # We need to recreate the table
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS items_new (
+                    key TEXT PRIMARY KEY,
+                    version INTEGER NOT NULL,
+                    title TEXT NOT NULL,
+                    abstract TEXT,
+                    creators TEXT,
+                    tags TEXT,
+                    collections TEXT,
+                    year INTEGER,
+                    doi TEXT,
+                    url TEXT,
+                    raw_json TEXT NOT NULL,
+                    content_hash TEXT,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+
+                INSERT INTO items_new (key, version, title, abstract, creators, tags, collections, year, doi, url, raw_json, content_hash, updated_at)
+                SELECT key, version, title, abstract, creators, tags, collections, year, doi, url, raw_json, content_hash, updated_at
+                FROM items;
+
+                DROP TABLE items;
+
+                ALTER TABLE items_new RENAME TO items;
+
+                CREATE INDEX IF NOT EXISTS idx_items_version ON items(version);
+                CREATE INDEX IF NOT EXISTS idx_items_content_hash ON items(content_hash);
+            """)
+
+        # Drop old candidate_embeddings table if exists
+        conn.execute("DROP TABLE IF EXISTS candidate_embeddings")
 
     def close(self) -> None:
         """Close database connection."""
@@ -149,61 +196,34 @@ class ProfileStorage:
         self.connect().execute(f"DELETE FROM items WHERE key IN ({placeholders})", keys)
         self.connect().commit()
 
-    def set_embedding(self, key: str, vector: bytes, embedding_hash: Optional[str] = None) -> None:
-        """Store embedding for item.
-
-        Args:
-            key: Item key
-            vector: Embedding vector as bytes
-            embedding_hash: Content hash used to generate this embedding (for incremental updates)
-        """
-        self.connect().execute(
-            "UPDATE items SET embedding = ?, embedding_hash = ?, updated_at=CURRENT_TIMESTAMP WHERE key = ?",
-            (vector, embedding_hash, key),
-        )
-        self.connect().commit()
-
     def iter_items(self) -> Iterable[ZoteroItem]:
         """Iterate over all items."""
         cur = self.connect().execute("SELECT * FROM items")
         for row in cur:
             yield _row_to_item(row)
 
-    def fetch_items_needing_embedding(self) -> List[ZoteroItem]:
-        """Fetch items that need embedding computation.
+    def get_item(self, key: str) -> Optional[ZoteroItem]:
+        """Get item by key."""
+        cur = self.connect().execute("SELECT * FROM items WHERE key = ?", (key,))
+        row = cur.fetchone()
+        return _row_to_item(row) if row else None
 
-        Returns items where:
-        - embedding is NULL (new items)
-        - embedding_hash != content_hash (content changed since last embedding)
-        """
-        cur = self.connect().execute(
-            """
-            SELECT * FROM items
-            WHERE embedding IS NULL
-               OR embedding_hash IS NULL
-               OR embedding_hash != content_hash
-            ORDER BY updated_at ASC
-            """
-        )
-        rows = cur.fetchall()
-        return [_row_to_item(row) for row in rows]
+    def get_all_items(self) -> List[ZoteroItem]:
+        """Get all items as a list."""
+        return list(self.iter_items())
 
-    def count_items_needing_embedding(self) -> int:
-        """Count items that need embedding computation."""
-        cur = self.connect().execute(
-            """
-            SELECT COUNT(*) FROM items
-            WHERE embedding IS NULL
-               OR embedding_hash IS NULL
-               OR embedding_hash != content_hash
-            """
-        )
+    def count_items(self) -> int:
+        """Count total items."""
+        cur = self.connect().execute("SELECT COUNT(*) FROM items")
         return cur.fetchone()[0]
 
-    def fetch_all_embeddings(self) -> List[Tuple[str, bytes]]:
-        """Fetch all stored embeddings."""
-        cur = self.connect().execute("SELECT key, embedding FROM items WHERE embedding IS NOT NULL")
-        return [(row["key"], row["embedding"]) for row in cur]
+    def get_all_content_hashes(self) -> dict[str, str]:
+        """Get mapping of item keys to content hashes.
+
+        Used by EmbeddingCache to determine which items need re-embedding.
+        """
+        cur = self.connect().execute("SELECT key, content_hash FROM items WHERE content_hash IS NOT NULL")
+        return {row["key"]: row["content_hash"] for row in cur}
 
     # Summary helpers
 

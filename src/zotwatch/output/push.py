@@ -47,9 +47,7 @@ class ZoteroPusher:
         collection_key = self._ensure_collection()
         payload = []
         for work in works_list:
-            note = (note_template or "Recommended due to score {score:.3f}").format(
-                **work.model_dump()
-            )
+            note = (note_template or "Recommended due to score {score:.3f}").format(**work.model_dump())
             payload.append(
                 {
                     "itemType": "note",
@@ -88,9 +86,7 @@ class ZoteroPusher:
         resp = self.session.post(collections_url, json=[{"name": COLLECTION_NAME}])
         resp.raise_for_status()
         created = resp.json()[0]
-        self._collection_key = (
-            created.get("successful", {}).get("0", {}).get("data", {}).get("key")
-        )
+        self._collection_key = created.get("successful", {}).get("0", {}).get("data", {}).get("key")
         if not self._collection_key:
             raise RuntimeError("Failed to create or retrieve Zotero collection")
         return self._collection_key

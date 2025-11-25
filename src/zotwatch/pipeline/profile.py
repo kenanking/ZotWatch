@@ -3,16 +3,24 @@
 import logging
 from collections import Counter
 from pathlib import Path
-from typing import List, Optional
+from typing import TYPE_CHECKING, List, Optional
 
 import numpy as np
 
-from zotwatch.config.settings import Settings
 from zotwatch.core.models import ProfileArtifacts, ZoteroItem
-from zotwatch.infrastructure.embedding import FaissIndex, VoyageEmbedding
+from zotwatch.infrastructure.embedding import (
+    CachingEmbeddingProvider,
+    EmbeddingCache,
+    FaissIndex,
+    VoyageEmbedding,
+)
 from zotwatch.infrastructure.storage import ProfileStorage
 from zotwatch.utils.datetime import utc_now
 from zotwatch.utils.text import json_dumps
+
+if TYPE_CHECKING:
+    from zotwatch.config.settings import Settings
+    from zotwatch.infrastructure.embedding.base import BaseEmbeddingProvider
 
 logger = logging.getLogger(__name__)
 
@@ -25,17 +33,44 @@ class ProfileBuilder:
         base_dir: Path | str,
         storage: ProfileStorage,
         settings: Settings,
-        vectorizer: Optional[VoyageEmbedding] = None,
+        vectorizer: Optional[BaseEmbeddingProvider] = None,
+        embedding_cache: Optional[EmbeddingCache] = None,
     ):
+        """Initialize profile builder.
+
+        Args:
+            base_dir: Base directory for data files.
+            storage: Profile storage for items.
+            settings: Application settings.
+            vectorizer: Optional base embedding provider (defaults to VoyageEmbedding).
+            embedding_cache: Optional embedding cache. If provided, wraps vectorizer
+                            with CachingEmbeddingProvider for profile source type.
+        """
         self.base_dir = Path(base_dir)
         self.storage = storage
         self.settings = settings
-        self.vectorizer = vectorizer or VoyageEmbedding(
+
+        # Create base vectorizer
+        base_vectorizer = vectorizer or VoyageEmbedding(
             model_name=settings.embedding.model,
             api_key=settings.embedding.api_key,
             input_type=settings.embedding.input_type,
             batch_size=settings.embedding.batch_size,
         )
+
+        # Wrap with caching if cache is provided
+        if embedding_cache is not None:
+            self.vectorizer: BaseEmbeddingProvider = CachingEmbeddingProvider(
+                provider=base_vectorizer,
+                cache=embedding_cache,
+                source_type="profile",
+                ttl_days=None,  # Profile embeddings never expire
+            )
+            self._cache = embedding_cache
+        else:
+            self.vectorizer = base_vectorizer
+            self._cache = None
+
         self.artifacts = ProfileArtifacts(
             sqlite_path=str(self.base_dir / "data" / "profile.sqlite"),
             faiss_path=str(self.base_dir / "data" / "faiss.index"),
@@ -46,55 +81,39 @@ class ProfileBuilder:
         """Build profile from library items.
 
         Args:
-            full: If True, recompute all embeddings. If False (default), only compute
-                  embeddings for new or changed items (incremental mode).
+            full: If True, invalidate all profile embeddings and recompute.
+                  If False (default), use cached embeddings where available.
         """
         items = list(self.storage.iter_items())
         if not items:
             raise RuntimeError("No items found in storage; run ingest before building profile.")
 
-        # Determine which items need embedding computation
-        if full:
-            items_to_embed = items
-            logger.info("Full rebuild: computing embeddings for all %d items", len(items))
-        else:
-            items_to_embed = self.storage.fetch_items_needing_embedding()
-            if items_to_embed:
-                logger.info(
-                    "Incremental mode: %d/%d items need embedding update",
-                    len(items_to_embed),
-                    len(items),
-                )
-            else:
-                logger.info("All %d items have up-to-date embeddings", len(items))
+        logger.info("Building profile from %d library items", len(items))
 
-        # Compute and store embeddings for items that need them
-        if items_to_embed:
-            texts = [item.content_for_embedding() for item in items_to_embed]
+        # If full rebuild requested and cache is available, invalidate profile embeddings
+        if full and self._cache is not None:
+            invalidated = self._cache.invalidate_source("profile")
+            if invalidated > 0:
+                logger.info("Invalidated %d cached profile embeddings for full rebuild", invalidated)
+
+        # Encode all items (caching handled automatically by CachingEmbeddingProvider)
+        texts = [item.content_for_embedding() for item in items]
+        source_ids = [item.key for item in items]
+
+        # Use encode_with_ids if available (for source tracking)
+        if isinstance(self.vectorizer, CachingEmbeddingProvider):
+            vectors = self.vectorizer.encode_with_ids(texts, source_ids=source_ids)
+        else:
             vectors = self.vectorizer.encode(texts)
 
-            for item, vector in zip(items_to_embed, vectors):
-                self.storage.set_embedding(
-                    item.key,
-                    vector.tobytes(),
-                    embedding_hash=item.content_hash,
-                )
-            logger.info("Computed and stored %d embeddings", len(items_to_embed))
+        logger.info("Computed embeddings for %d items", len(items))
 
-        # Rebuild FAISS index from all embeddings in database
-        logger.info("Building FAISS index from stored embeddings")
-        all_embeddings = self.storage.fetch_all_embeddings()
-
-        if not all_embeddings:
-            raise RuntimeError("No embeddings found in storage after computation.")
-
-        # Convert to numpy array
-        vectors = np.array([np.frombuffer(vec, dtype=np.float32) for _, vec in all_embeddings])
-
+        # Build FAISS index
+        logger.info("Building FAISS index")
         index, _ = FaissIndex.from_vectors(vectors)
         index.save(self.artifacts.faiss_path)
 
-        # Generate profile summary using all items
+        # Generate profile summary
         profile_summary = self._summarize(items, vectors)
         json_path = Path(self.artifacts.profile_json_path)
         json_path.parent.mkdir(parents=True, exist_ok=True)

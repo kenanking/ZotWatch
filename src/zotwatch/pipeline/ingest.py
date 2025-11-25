@@ -1,7 +1,6 @@
 """Zotero ingestion pipeline."""
 
 import logging
-from pathlib import Path
 
 from zotwatch.config.settings import Settings
 from zotwatch.infrastructure.storage import ProfileStorage

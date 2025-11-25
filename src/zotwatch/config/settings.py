@@ -129,6 +129,7 @@ class EmbeddingConfig(BaseModel):
     api_key: str = ""
     input_type: str = "document"
     batch_size: int = 128
+    candidate_ttl_days: int = 7  # TTL for candidate embedding cache
 
 
 # LLM Configuration

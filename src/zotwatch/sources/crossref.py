@@ -88,6 +88,7 @@ class CrossrefSource(BaseSource):
             "order": "desc",
             "rows": 200,
             "mailto": self.config.mailto,
+            "select": "DOI,title,author,abstract,container-title,created,URL,type,is-referenced-by-count",
         }
 
         logger.info("Fetching Crossref works since %s", since.date())
@@ -119,6 +120,7 @@ class CrossrefSource(BaseSource):
                 "order": "desc",
                 "rows": 100,
                 "mailto": self.config.mailto,
+                "select": "DOI,title,author,abstract,container-title,created,URL,type,is-referenced-by-count",
             }
             try:
                 resp = self.session.get(
@@ -153,10 +155,7 @@ class CrossrefSource(BaseSource):
             return None
 
         doi = item.get("DOI")
-        authors = [
-            " ".join(filter(None, [p.get("given"), p.get("family")])).strip()
-            for p in item.get("author", [])
-        ]
+        authors = [" ".join(filter(None, [p.get("given"), p.get("family")])).strip() for p in item.get("author", [])]
 
         return CandidateWork(
             source="crossref",

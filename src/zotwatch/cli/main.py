@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 from zotwatch import __version__
 from zotwatch.config import Settings, load_settings
 from zotwatch.core.models import RankedWork
-from zotwatch.infrastructure.embedding import VoyageEmbedding
+from zotwatch.infrastructure.embedding import EmbeddingCache, VoyageEmbedding
 from zotwatch.infrastructure.storage import ProfileStorage
 from zotwatch.llm import OpenRouterClient, PaperSummarizer
 from zotwatch.output import render_html, write_rss
@@ -37,6 +37,12 @@ def _get_base_dir() -> Path:
     return cwd
 
 
+def _get_embedding_cache(base_dir: Path) -> EmbeddingCache:
+    """Get or create embedding cache for the given base directory."""
+    cache_db_path = base_dir / "data" / "embeddings.sqlite"
+    return EmbeddingCache(cache_db_path)
+
+
 @click.group()
 @click.option("--base-dir", type=click.Path(exists=True), default=None, help="Repository base directory")
 @click.option("-v", "--verbose", is_flag=True, help="Enable debug logging")
@@ -55,6 +61,7 @@ def cli(ctx: click.Context, base_dir: Optional[str], verbose: bool) -> None:
 
     # Load settings lazily (some commands may not need them)
     ctx.obj["_settings"] = None
+    ctx.obj["_embedding_cache"] = None
 
 
 def _get_settings(ctx: click.Context) -> Settings:
@@ -64,18 +71,27 @@ def _get_settings(ctx: click.Context) -> Settings:
     return ctx.obj["_settings"]
 
 
+def _get_cache(ctx: click.Context) -> EmbeddingCache:
+    """Get or create embedding cache."""
+    if ctx.obj["_embedding_cache"] is None:
+        ctx.obj["_embedding_cache"] = _get_embedding_cache(ctx.obj["base_dir"])
+    return ctx.obj["_embedding_cache"]
+
+
 @cli.command()
 @click.option("--full", is_flag=True, help="Full rebuild of profile (recompute all embeddings)")
 @click.pass_context
 def profile(ctx: click.Context, full: bool) -> None:
     """Build or update user research profile.
 
-    By default, only computes embeddings for new or changed items (incremental mode).
-    Use --full to force recomputation of all embeddings.
+    By default, uses cached embeddings where available.
+    Use --full to invalidate cache and recompute all embeddings.
     """
     settings = _get_settings(ctx)
     base_dir = ctx.obj["base_dir"]
     storage = ProfileStorage(base_dir / "data" / "profile.sqlite")
+    storage.initialize()
+    embedding_cache = _get_cache(ctx)
 
     # Ingest from Zotero
     click.echo("Ingesting items from Zotero...")
@@ -83,25 +99,31 @@ def profile(ctx: click.Context, full: bool) -> None:
     stats = ingestor.run(full=full)
     click.echo(f"  Fetched: {stats.fetched}, Updated: {stats.updated}, Removed: {stats.removed}")
 
-    # Check embedding status
-    total_items = len(list(storage.iter_items()))
-    items_needing_embedding = storage.count_items_needing_embedding()
+    # Count items
+    total_items = storage.count_items()
+    cached_profile = embedding_cache.count(source_type="profile", model=settings.embedding.model)
 
     if full:
         click.echo("Building profile (full rebuild)...")
-    elif items_needing_embedding > 0:
-        click.echo(f"Building profile ({items_needing_embedding}/{total_items} items need embedding update)...")
+    elif cached_profile < total_items:
+        click.echo(f"Building profile ({total_items - cached_profile}/{total_items} items need embedding)...")
     else:
-        click.echo(f"Building profile (all {total_items} embeddings up-to-date)...")
+        click.echo(f"Building profile (all {total_items} embeddings cached)...")
 
-    # Build profile
+    # Build profile with unified cache
     vectorizer = VoyageEmbedding(
         model_name=settings.embedding.model,
         api_key=settings.embedding.api_key,
         input_type=settings.embedding.input_type,
         batch_size=settings.embedding.batch_size,
     )
-    builder = ProfileBuilder(base_dir, storage, settings, vectorizer=vectorizer)
+    builder = ProfileBuilder(
+        base_dir,
+        storage,
+        settings,
+        vectorizer=vectorizer,
+        embedding_cache=embedding_cache,
+    )
     artifacts = builder.run(full=full)
 
     click.echo("Profile built successfully:")
@@ -111,10 +133,9 @@ def profile(ctx: click.Context, full: bool) -> None:
 
 
 @cli.command()
-@click.option("--rss", is_flag=True, help="Generate RSS feed")
-@click.option("--report", is_flag=True, help="Generate HTML report")
-@click.option("--top", type=int, default=50, help="Number of top results to keep")
-@click.option("--summarize", is_flag=True, help="Generate AI summaries for top papers")
+@click.option("--rss", is_flag=True, help="Generate RSS feed only")
+@click.option("--report", is_flag=True, help="Generate HTML report only")
+@click.option("--top", type=int, default=20, help="Number of top results (default: 20)")
 @click.option("--push", is_flag=True, help="Push recommendations to Zotero")
 @click.pass_context
 def watch(
@@ -122,13 +143,22 @@ def watch(
     rss: bool,
     report: bool,
     top: int,
-    summarize: bool,
     push: bool,
 ) -> None:
-    """Fetch, score, and output paper recommendations."""
+    """Fetch, score, and output paper recommendations.
+
+    By default, generates both RSS feed and HTML report with AI summaries.
+    Use --rss or --report to generate only one output format.
+    """
+    # If neither specified, generate both
+    if not rss and not report:
+        rss = True
+        report = True
     settings = _get_settings(ctx)
     base_dir = ctx.obj["base_dir"]
     storage = ProfileStorage(base_dir / "data" / "profile.sqlite")
+    storage.initialize()
+    embedding_cache = _get_cache(ctx)
 
     # Incremental ingest
     click.echo("Syncing with Zotero...")
@@ -146,20 +176,19 @@ def watch(
     filtered = dedupe.filter(candidates)
     click.echo(f"  After dedup: {len(filtered)} candidates")
 
-    # Rank
+    # Rank (with unified embedding cache)
     click.echo("Ranking candidates...")
-    vectorizer = VoyageEmbedding(
-        model_name=settings.embedding.model,
-        api_key=settings.embedding.api_key,
-        input_type=settings.embedding.input_type,
-        batch_size=settings.embedding.batch_size,
-    )
-    ranker = WorkRanker(base_dir, settings, vectorizer=vectorizer)
+    ranker = WorkRanker(base_dir, settings, embedding_cache=embedding_cache)
     ranked = ranker.rank(filtered)
+
+    # Cleanup expired embedding cache entries
+    removed = embedding_cache.cleanup_expired()
+    if removed > 0:
+        click.echo(f"  Cleaned up {removed} expired embedding cache entries")
 
     # Filter
     ranked = _filter_recent(ranked, days=7)
-    ranked = _limit_preprints(ranked, max_ratio=0.3)
+    ranked = _limit_preprints(ranked, max_ratio=1.0)
 
     if top and len(ranked) > top:
         ranked = ranked[:top]
@@ -176,13 +205,12 @@ def watch(
     for idx, work in enumerate(ranked[:10], start=1):
         click.echo(f"  {idx:02d} | {work.score:.3f} | {work.label} | {work.title[:60]}...")
 
-    # Generate summaries if requested
-    if summarize and settings.llm.enabled:
-        click.echo("\nGenerating AI summaries...")
+    # Generate AI summaries for all ranked papers
+    if settings.llm.enabled:
+        click.echo(f"\nGenerating AI summaries for {len(ranked)} papers...")
         llm_client = OpenRouterClient.from_config(settings.llm)
         summarizer = PaperSummarizer(llm_client, storage, model=settings.llm.model)
-        top_n = settings.llm.summarize.top_n
-        summaries = summarizer.summarize_batch(ranked[:top_n])
+        summaries = summarizer.summarize_batch(ranked)
         click.echo(f"  Generated {len(summaries)} summaries")
 
         # Attach summaries to ranked works
@@ -190,6 +218,8 @@ def watch(
         for work in ranked:
             if work.identifier in summary_map:
                 work.summary = summary_map[work.identifier]
+    else:
+        click.echo("\nAI summaries disabled (llm.enabled=false in config)")
 
     # Generate outputs
     if rss:
@@ -237,6 +267,8 @@ def summarize(ctx: click.Context, top: int, force: bool, model: Optional[str]) -
         return
 
     storage = ProfileStorage(base_dir / "data" / "profile.sqlite")
+    storage.initialize()
+    embedding_cache = _get_cache(ctx)
 
     # Load recent ranked works from cache
     from zotwatch.infrastructure.storage.cache import FileCache
@@ -251,15 +283,9 @@ def summarize(ctx: click.Context, top: int, force: bool, model: Optional[str]) -
 
     _, candidates = result
 
-    # Re-rank to get scores
+    # Re-rank to get scores (with unified embedding cache)
     click.echo("Re-ranking candidates...")
-    vectorizer = VoyageEmbedding(
-        model_name=settings.embedding.model,
-        api_key=settings.embedding.api_key,
-        input_type=settings.embedding.input_type,
-        batch_size=settings.embedding.batch_size,
-    )
-    ranker = WorkRanker(base_dir, settings, vectorizer=vectorizer)
+    ranker = WorkRanker(base_dir, settings, embedding_cache=embedding_cache)
 
     dedupe = DedupeEngine(storage)
     filtered = dedupe.filter(candidates)

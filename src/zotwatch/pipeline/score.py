@@ -6,13 +6,21 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
 import numpy as np
 
-from zotwatch.config.settings import Settings
 from zotwatch.core.models import CandidateWork, RankedWork
-from zotwatch.infrastructure.embedding import FaissIndex, VoyageEmbedding
+from zotwatch.infrastructure.embedding import (
+    CachingEmbeddingProvider,
+    EmbeddingCache,
+    FaissIndex,
+    VoyageEmbedding,
+)
+
+if TYPE_CHECKING:
+    from zotwatch.config.settings import Settings
+    from zotwatch.infrastructure.embedding.base import BaseEmbeddingProvider
 
 logger = logging.getLogger(__name__)
 
@@ -32,16 +40,41 @@ class WorkRanker:
         self,
         base_dir: Path | str,
         settings: Settings,
-        vectorizer: Optional[VoyageEmbedding] = None,
+        vectorizer: Optional[BaseEmbeddingProvider] = None,
+        embedding_cache: Optional[EmbeddingCache] = None,
     ):
+        """Initialize work ranker.
+
+        Args:
+            base_dir: Base directory for data files.
+            settings: Application settings.
+            vectorizer: Optional base embedding provider (defaults to VoyageEmbedding).
+            embedding_cache: Optional embedding cache. If provided, wraps vectorizer
+                            with CachingEmbeddingProvider for candidate source type.
+        """
         self.base_dir = Path(base_dir)
         self.settings = settings
-        self.vectorizer = vectorizer or VoyageEmbedding(
+        self._cache = embedding_cache
+
+        # Create base vectorizer
+        base_vectorizer = vectorizer or VoyageEmbedding(
             model_name=settings.embedding.model,
             api_key=settings.embedding.api_key,
             input_type=settings.embedding.input_type,
             batch_size=settings.embedding.batch_size,
         )
+
+        # Wrap with cache if provided
+        if embedding_cache is not None:
+            self.vectorizer: BaseEmbeddingProvider = CachingEmbeddingProvider(
+                provider=base_vectorizer,
+                cache=embedding_cache,
+                source_type="candidate",
+                ttl_days=settings.embedding.candidate_ttl_days,
+            )
+        else:
+            self.vectorizer = base_vectorizer
+
         self.artifacts = RankerArtifacts(
             index_path=self.base_dir / "data" / "faiss.index",
             profile_path=self.base_dir / "data" / "profile.json",
@@ -87,6 +120,7 @@ class WorkRanker:
         if not candidates:
             return []
 
+        # Encode candidates using unified interface (caching handled automatically)
         texts = [c.content_for_embedding() for c in candidates]
         vectors = self.vectorizer.encode(texts)
         logger.info("Scoring %d candidate works", len(candidates))
@@ -100,9 +134,7 @@ class WorkRanker:
             similarity = float(distance[0]) if distance.size else 0.0
             recency_score = _compute_recency(candidate.published, self.settings)
             citation_score = _compute_citation_score(candidate)
-            journal_quality, journal_sjr = _journal_quality_score(
-                candidate.venue, self.journal_metrics
-            )
+            journal_quality, journal_sjr = _journal_quality_score(candidate.venue, self.journal_metrics)
             author_bonus = _bonus(candidate.authors, self.settings.scoring.whitelist_authors)
             venue_bonus = _bonus(
                 [candidate.venue] if candidate.venue else [],
@@ -152,9 +184,7 @@ def _bonus(values: List[str], whitelist: List[str]) -> float:
     return 0.0
 
 
-def _journal_quality_score(
-    venue: Optional[str], metrics: Dict[str, float]
-) -> Tuple[float, Optional[float]]:
+def _journal_quality_score(venue: Optional[str], metrics: Dict[str, float]) -> Tuple[float, Optional[float]]:
     """Calculate journal quality score."""
     if not venue:
         return 1.0, None
@@ -188,9 +218,7 @@ def _compute_recency(published: datetime | None, settings: Settings) -> float:
 
 def _compute_citation_score(candidate: CandidateWork) -> float:
     """Calculate citation score."""
-    citations = float(
-        candidate.metrics.get("cited_by", candidate.metrics.get("is-referenced-by", 0.0))
-    )
+    citations = float(candidate.metrics.get("cited_by", candidate.metrics.get("is-referenced-by", 0.0)))
     return float(np.log1p(citations)) if citations else 0.0
 
 

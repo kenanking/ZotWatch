@@ -1,6 +1,15 @@
-"""Embedding providers."""
+"""Embedding providers and caching infrastructure."""
 
-from .voyage import VoyageEmbedding
+from .base import BaseEmbeddingProvider
+from .cache import EmbeddingCache
+from .cached import CachingEmbeddingProvider
 from .faiss_index import FaissIndex
+from .voyage import VoyageEmbedding
 
-__all__ = ["VoyageEmbedding", "FaissIndex"]
+__all__ = [
+    "BaseEmbeddingProvider",
+    "CachingEmbeddingProvider",
+    "EmbeddingCache",
+    "FaissIndex",
+    "VoyageEmbedding",
+]

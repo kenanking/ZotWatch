@@ -50,7 +50,7 @@ class SourceRegistry:
     def register(cls, source_class: Type[BaseSource]) -> Type[BaseSource]:
         """Decorator to register a source."""
         # Get name from class
-        instance = object.__new__(source_class)
+        _ = object.__new__(source_class)
         name = source_class.__name__.lower().replace("source", "")
         cls._sources[name] = source_class
         return source_class

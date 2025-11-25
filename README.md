@@ -48,14 +48,17 @@ uv run zotwatch profile --full
 # 增量更新画像（仅计算新增/变更条目的嵌入）
 uv run zotwatch profile
 
-# 日常监测（生成 RSS + HTML 报告）
-uv run zotwatch watch --rss --report --top 20
+# 日常监测（默认生成 RSS + HTML 报告 + AI 摘要，推荐 20 篇）
+uv run zotwatch watch
 
-# 生成 AI 摘要
-uv run zotwatch watch --rss --report --summarize --top 20
+# 只生成 RSS
+uv run zotwatch watch --rss
 
-# 单独生成摘要
-uv run zotwatch summarize --top 20
+# 只生成 HTML 报告
+uv run zotwatch watch --report
+
+# 自定义推荐数量
+uv run zotwatch watch --top 50
 ```
 
 ## CLI 命令
@@ -81,25 +84,16 @@ Options:
 zotwatch watch [OPTIONS]
 
 Options:
-  --rss        生成 RSS 订阅源
-  --report     生成 HTML 报告
-  --top N      保留前 N 条结果（默认 50）
-  --summarize  为推荐论文生成 AI 摘要
+  --rss        只生成 RSS 订阅源
+  --report     只生成 HTML 报告
+  --top N      保留前 N 条结果（默认 20）
   --push       推送推荐到 Zotero
 ```
 
-### `zotwatch summarize`
-
-单独为最近的推荐生成 AI 摘要。
-
-```bash
-zotwatch summarize [OPTIONS]
-
-Options:
-  --top N    摘要数量（默认 20）
-  --force    强制重新生成已有摘要
-  --model    指定 LLM 模型
-```
+默认行为：
+- 同时生成 RSS 和 HTML 报告
+- 自动为所有推荐论文生成 AI 摘要
+- 推荐数量默认 20 篇
 
 ## 目录结构
 
@@ -202,6 +196,10 @@ uv run zotwatch profile --full
 **Q: AI 摘要不生成？**
 
 确保 `OPENROUTER_API_KEY` 已配置，且 `config.yaml` 中 `llm.enabled: true`。
+
+**Q: 如何禁用 AI 摘要？**
+
+在 `config/config.yaml` 中设置 `llm.enabled: false`。
 
 ## License
 
