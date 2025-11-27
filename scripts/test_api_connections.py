@@ -57,7 +57,7 @@ def format_status(status: Status, message: str) -> str:
     """Format status with icon."""
     icons = {
         Status.SUCCESS: "\u2705",  # Green checkmark
-        Status.FAILED: "\u274c",   # Red X
+        Status.FAILED: "\u274c",  # Red X
         Status.SKIPPED: "\u26a0\ufe0f",  # Warning sign
     }
     return f"{icons[status]} {message}"
@@ -98,11 +98,13 @@ def test_zotero() -> TestResult:
 
     try:
         session = requests.Session()
-        session.headers.update({
-            "Zotero-API-Version": "3",
-            "Authorization": f"Bearer {api_key}",
-            "User-Agent": "ZotWatch/0.2",
-        })
+        session.headers.update(
+            {
+                "Zotero-API-Version": "3",
+                "Authorization": f"Bearer {api_key}",
+                "User-Agent": "ZotWatch/0.2",
+            }
+        )
 
         resp = session.get(
             f"https://api.zotero.org/users/{user_id}/items",
@@ -359,10 +361,7 @@ def main():
     env_status = check_env_vars()
 
     # Check required variables
-    missing_required = [
-        name for name, config in ENV_VARS.items()
-        if config["required"] and not env_status.get(name)
-    ]
+    missing_required = [name for name, config in ENV_VARS.items() if config["required"] and not env_status.get(name)]
 
     if missing_required:
         print()

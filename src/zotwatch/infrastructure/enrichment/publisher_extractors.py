@@ -39,14 +39,15 @@ PUBLISHER_CONFIGS: Dict[str, Dict] = {
     },
     "ieee": {
         "domains": ["ieeexplore.ieee.org"],
+        "selectors_first": True,
         "meta_tags": [
             ("property", "og:description"),
             ("property", "twitter:description"),
             ("name", "description"),
         ],
         "selectors": [
+            r'"abstract"\s*:\s*"((?:[^"\\]|\\.)+)"',
             r'<div[^>]*class=["\'][^"\']*abstract-text[^"\']*["\'][^>]*>(.*?)</div>',
-            r'"abstract":\s*"([^"]+)"',  # JSON in page for IEEE
         ],
     },
     "springer": {
@@ -197,13 +198,23 @@ def _clean_html_text(text: str) -> str:
     """Clean extracted HTML text.
 
     Args:
-        text: Raw extracted text (may contain HTML entities and extra whitespace).
+        text: Raw extracted text (may contain HTML entities, JSON escapes, and extra whitespace).
 
     Returns:
         Cleaned plain text.
     """
     if not text:
         return ""
+
+    # Decode JSON escape sequences (for content extracted from JavaScript/JSON)
+    # Order matters: handle double backslash first to avoid incorrect substitutions
+    # e.g., \\n should become \n (literal), not a space
+    text = re.sub(r"\\\\", "\x00", text)  # Temporarily replace \\ with placeholder
+    text = text.replace(r"\"", '"')
+    text = text.replace(r"\n", " ")
+    text = text.replace(r"\t", " ")
+    text = text.replace(r"\r", "")
+    text = text.replace("\x00", "\\")  # Restore backslashes
 
     # Decode HTML entities
     text = html.unescape(text)

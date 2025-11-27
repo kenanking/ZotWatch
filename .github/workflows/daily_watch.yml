@@ -2,8 +2,8 @@ name: Daily Watch & Deploy
 
 on:
   schedule:
-    - cron: "5 22 * * *"  # UTC 22:05 = 北京时间 6:05
-  workflow_dispatch:  # 支持手动触发
+    - cron: "35 20 * * *"  # UTC 20:35 = Beijing Time 4:35
+  workflow_dispatch:  # Supports manual trigger
 
 # Allow one concurrent deployment
 concurrency:
@@ -45,6 +45,7 @@ jobs:
         run: mkdir -p data reports
 
       # Cache profile data (embeddings, FAISS index, etc.)
+      # These change rarely, key by config hash only
       - name: Cache profile data
         uses: actions/cache@v4
         with:
@@ -53,11 +54,24 @@ jobs:
             data/faiss.index
             data/profile.json
             data/embeddings.sqlite
-            data/metadata_cache.sqlite
-          key: profile-${{ hashFiles('config/config.yaml') }}-${{ github.run_number }}
+          key: profile-${{ hashFiles('config/config.yaml') }}
           restore-keys: |
-            profile-${{ hashFiles('config/config.yaml') }}-
             profile-
+
+      # Cache metadata (abstracts, etc.) separately - changes more frequently
+      # Use date-based key so multiple runs on the same day share cache
+      - name: Get date for cache key
+        id: date
+        run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+
+      - name: Cache metadata
+        uses: actions/cache@v4
+        with:
+          path: |
+            data/metadata_cache.sqlite
+          key: metadata-${{ steps.date.outputs.date }}
+          restore-keys: |
+            metadata-
 
       # Cache Camoufox browser
       - name: Cache Camoufox browser
@@ -113,8 +127,8 @@ jobs:
           # Copy new reports (overwrites same-dated reports, preserves historical ones)
           cp ../public/report-*.html ${{ env.DEPLOY_SUBDIR }}/ 2>/dev/null || true
 
-          # Overwrite feed.rss with latest version
-          cp ../public/feed.rss ${{ env.DEPLOY_SUBDIR }}/ 2>/dev/null || true
+          # Overwrite feed.xml with latest version
+          cp ../public/feed.xml ${{ env.DEPLOY_SUBDIR }}/ 2>/dev/null || true
 
           # Generate index.html based on all reports (historical + new)
           LATEST=$(ls -t ${{ env.DEPLOY_SUBDIR }}/report-*.html 2>/dev/null | head -1 | xargs -r basename || echo "")

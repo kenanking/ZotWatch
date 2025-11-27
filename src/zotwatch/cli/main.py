@@ -10,18 +10,18 @@ from dotenv import load_dotenv
 
 from zotwatch import __version__
 from zotwatch.config import Settings, load_settings
+from zotwatch.config.settings import LLMConfig
 from zotwatch.core.models import FeaturedWork, RankedWork
 from zotwatch.infrastructure.embedding import EmbeddingCache, VoyageEmbedding, VoyageReranker
+from zotwatch.infrastructure.enrichment.cache import MetadataCache
 from zotwatch.infrastructure.storage import ProfileStorage
-from zotwatch.config.settings import LLMConfig
 from zotwatch.llm import InterestRefiner, KimiClient, OpenRouterClient, OverallSummarizer, PaperSummarizer
 from zotwatch.llm.base import BaseLLMProvider
 from zotwatch.output import render_html, write_rss
 from zotwatch.output.push import ZoteroPusher
 from zotwatch.pipeline import DedupeEngine, FeaturedSelector, ProfileBuilder, WorkRanker
-from zotwatch.pipeline.fetch import CandidateFetcher
 from zotwatch.pipeline.enrich import AbstractEnricher
-from zotwatch.infrastructure.enrichment.cache import MetadataCache
+from zotwatch.pipeline.fetch import CandidateFetcher
 from zotwatch.sources.zotero import ZoteroIngestor
 from zotwatch.utils.datetime import utc_today_start
 from zotwatch.utils.logging import setup_logging
@@ -347,7 +347,7 @@ def watch(
 
     # Filter
     ranked = _filter_recent(ranked, days=7)
-    ranked = _limit_preprints(ranked, max_ratio=0.7)
+    ranked = _limit_preprints(ranked, max_ratio=1.0)
 
     if top and len(ranked) > top:
         ranked = ranked[:top]
@@ -397,15 +397,11 @@ def watch(
 
         if featured_works:
             click.echo("  Summarizing featured papers...")
-            overall_summaries["featured"] = overall_summarizer.summarize_section(
-                featured_works, "featured"
-            )
+            overall_summaries["featured"] = overall_summarizer.summarize_section(featured_works, "featured")
 
         if ranked:
             click.echo("  Summarizing similarity papers...")
-            overall_summaries["similarity"] = overall_summarizer.summarize_section(
-                ranked, "similarity"
-            )
+            overall_summaries["similarity"] = overall_summarizer.summarize_section(ranked, "similarity")
     else:
         click.echo("\nAI summaries disabled (llm.enabled=false in config)")
 
