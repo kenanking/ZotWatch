@@ -86,7 +86,7 @@ class InterestsConfig(BaseModel):
 
     enabled: bool = False
     description: str = ""  # Natural language interest description
-    top_k_recall: int = 50  # FAISS recall count
+    top_k_recall: int = 50  # FAISS recall count, -1 to skip FAISS and use all candidates
     top_k_featured: int = 5  # Final featured papers count
 
 

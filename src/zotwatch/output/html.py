@@ -407,7 +407,7 @@ _FALLBACK_TEMPLATE = """<!DOCTYPE html>
   <!-- Footer -->
   <footer class="bg-bg-card border-t border-border-color mt-12">
     <div class="content-container py-6 text-center text-sm text-text-secondary">
-      由 <a href="https://github.com/zotwatch/zotwatch" class="text-accent hover:text-accent-hover transition-colors">ZotWatch</a> 生成
+      灵感来自 <a href="https://github.com/Yorks0n/ZotWatch" class="text-accent hover:text-accent-hover transition-colors">ZotWatch</a>
     </div>
   </footer>
 

@@ -5,7 +5,7 @@ BULLET_SUMMARY_PROMPT = """请分析以下学术论文并提供简明扼要的�
 论文标题：{title}
 摘要：{abstract}
 作者：{authors}
-期刊：{venue}
+期刊/会议：{venue}
 
 请提供以下 5 个要点的总结：
 1. **研究问题**：本文解决什么问题？
@@ -24,7 +24,7 @@ DETAILED_ANALYSIS_PROMPT = """请对以下学术论文进行详细分析。
 论文标题：{title}
 摘要：{abstract}
 作者：{authors}
-期刊：{venue}
+期刊/会议：{venue}
 
 请撰写全面的分析，涵盖以下方面：
 

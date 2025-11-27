@@ -49,7 +49,7 @@ scoring:
       3) 视觉基础模型预训练（例如：CLIP、MAE、DINO、JEPA 等相关方法）
       4) 大语言模型的最新进展
       5) 希望排除生物医学领域的研究
-    top_k_recall: 50  # FAISS recall count
+    top_k_recall: -1  # FAISS recall count, -1 to skip FAISS and use all candidates
     top_k_featured: 5  # Final featured papers count
 
   # Voyage Rerank settings (uses VOYAGE_API_KEY)
