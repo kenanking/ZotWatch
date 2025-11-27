@@ -262,6 +262,102 @@ def _extract_meta_tag(html_content: str, attr_name: str, attr_value: str) -> str
     return None
 
 
+def _extract_sciencedirect_json(html_content: str) -> str | None:
+    """Extract abstract from ScienceDirect's __PRELOADED_STATE__ JSON.
+
+    ScienceDirect stores article content in a JSON object embedded in the page.
+    This method extracts the abstract from the 'author' class section (not
+    'author-highlights' which contains bullet points).
+
+    The JSON structure for each abstract block is:
+    {"$$":[...content...],"$":{"view":"all","id":"ab010","class":"author"},"#name":"abstract"}
+
+    Args:
+        html_content: HTML content containing the JSON.
+
+    Returns:
+        Full abstract text or None.
+    """
+    # Find the PRELOADED_STATE JSON
+    match = re.search(r"window\.__PRELOADED_STATE__\s*=\s*(\{.*?\});", html_content, re.DOTALL)
+    if not match:
+        return None
+
+    json_str = match.group(1)
+
+    # Find the abstracts section
+    abstracts_match = re.search(r'"abstracts":\{"content":\[(.*?)\]\}', json_str, re.DOTALL)
+    if not abstracts_match:
+        return None
+
+    abstracts_content = abstracts_match.group(1)
+
+    # Find abstract blocks with class="author" (not "author-highlights")
+    # The structure is: {"$$":[...content...],"$":{..."class":"author"},"#name":"abstract"}
+    # There can be multiple blocks - we need to find ONLY the "author" class block
+
+    abstract_paragraphs: list[str] = []
+
+    # Pattern to match individual abstract blocks with their class
+    # Using finditer to process each block separately
+    block_pattern = r'\{"\$\$":\[(.*?)\],"\$":\{[^}]*"class":"(author(?:-highlights)?)"\},"#name":"abstract"\}'
+
+    for block_match in re.finditer(block_pattern, abstracts_content, re.DOTALL):
+        block_content = block_match.group(1)
+        block_class = block_match.group(2)
+
+        # Only extract from "author" class (actual abstract), skip "author-highlights"
+        if block_class == "author":
+            # Extract para and simple-para text from this block
+            paras = re.findall(r'"#name":"(?:para|simple-para)","_":"([^"]+)"', block_content)
+            abstract_paragraphs.extend(paras)
+
+    if not abstract_paragraphs:
+        return None
+
+    # Clean each paragraph individually, then join with newlines to preserve structure
+    cleaned_paragraphs = [_clean_html_text(p) for p in abstract_paragraphs]
+    full_abstract = "\n".join(p for p in cleaned_paragraphs if p)
+
+    if len(full_abstract) >= 100:
+        logger.info("Extracted abstract from ScienceDirect JSON (%d chars)", len(full_abstract))
+        return full_abstract
+
+    return None
+
+
+def _is_highlights_content(text: str) -> bool:
+    """Check if content is a highlights section (bullet points, not abstract).
+
+    Elsevier and other publishers often have a "Highlights" section with bullet
+    points that can be mistakenly extracted as the abstract.
+
+    Args:
+        text: Cleaned text content.
+
+    Returns:
+        True if content appears to be highlights/bullet points rather than abstract.
+    """
+    if not text:
+        return True
+
+    # Check if content starts with "Highlights" header
+    if text.lower().startswith("highlights"):
+        return True
+
+    # Check if content is primarily bullet points
+    # Count bullet markers vs sentences
+    bullet_count = text.count("•") + text.count("●") + text.count("◆")
+    # Estimate sentence count by counting periods followed by space/end
+    sentence_endings = len(re.findall(r"\.\s|\.$", text))
+
+    # If more bullets than sentence endings, likely highlights
+    if bullet_count > 2 and bullet_count >= sentence_endings:
+        return True
+
+    return False
+
+
 def _extract_from_selector(html_content: str, selector_pattern: str) -> str | None:
     """Extract abstract using regex selector pattern.
 
@@ -278,7 +374,67 @@ def _extract_from_selector(html_content: str, selector_pattern: str) -> str | No
         cleaned = _clean_html_text(text)
         # Minimum length check
         if len(cleaned) >= 100:
+            # Skip highlights/bullet-point content
+            if _is_highlights_content(cleaned):
+                logger.debug("Skipping highlights content: %s...", cleaned[:80])
+                return None
             return cleaned
+    return None
+
+
+def _try_meta_tags(
+    html_content: str,
+    meta_tags: list[tuple[str, str]],
+    publisher: str,
+) -> str | None:
+    """Try extracting abstract from meta tags.
+
+    Args:
+        html_content: HTML content to search.
+        meta_tags: List of (attr_name, attr_value) tuples to try.
+        publisher: Publisher name for logging.
+
+    Returns:
+        Extracted and cleaned abstract or None.
+    """
+    for attr_name, attr_value in meta_tags:
+        content = _extract_meta_tag(html_content, attr_name, attr_value)
+        if content and len(content) >= 100:
+            logger.info(
+                "Extracted abstract from %s meta tag [%s=%s] (%d chars)",
+                publisher,
+                attr_name,
+                attr_value,
+                len(content),
+            )
+            return _clean_html_text(content)
+    return None
+
+
+def _try_selectors(
+    html_content: str,
+    selectors: list[str],
+    publisher: str,
+) -> str | None:
+    """Try extracting abstract from regex selectors.
+
+    Args:
+        html_content: HTML content to search.
+        selectors: List of regex patterns to try.
+        publisher: Publisher name for logging.
+
+    Returns:
+        Extracted and cleaned abstract or None.
+    """
+    for selector in selectors:
+        content = _extract_from_selector(html_content, selector)
+        if content:
+            logger.info(
+                "Extracted abstract from %s selector (%d chars)",
+                publisher,
+                len(content),
+            )
+            return content
     return None
 
 
@@ -309,92 +465,56 @@ def extract_abstract(html_content: str, url: str) -> str | None:
     publisher = detect_publisher(url)
     logger.debug("Detected publisher: %s for URL: %s", publisher, url)
 
-    # Get publisher-specific config or use generic
+    # Special handling for ScienceDirect (Elsevier) - extract from JSON first
+    # This captures the full multi-paragraph abstract more reliably than regex
+    if publisher == "elsevier":
+        content = _extract_sciencedirect_json(html_content)
+        if content:
+            return content
+
+    # Get publisher-specific config
     if publisher != "unknown":
         config = PUBLISHER_CONFIGS[publisher]
         meta_tags = config.get("meta_tags", [])
         selectors = config.get("selectors", [])
         selectors_first = config.get("selectors_first", False)
     else:
-        meta_tags = []
-        selectors = []
-        selectors_first = False
+        meta_tags, selectors, selectors_first = [], [], False
 
-    # For publishers with truncated meta descriptions, try selectors first
+    # Try extraction in configured order
     if selectors_first:
-        # Try publisher-specific selectors first
-        for selector in selectors:
-            content = _extract_from_selector(html_content, selector)
-            if content:
-                logger.info(
-                    "Extracted abstract from %s selector (%d chars)",
-                    publisher,
-                    len(content),
-                )
-                return content
-
-        # Fall back to meta tags
-        for attr_name, attr_value in meta_tags:
-            content = _extract_meta_tag(html_content, attr_name, attr_value)
-            if content and len(content) >= 100:
-                logger.info(
-                    "Extracted abstract from %s meta tag [%s=%s] (%d chars)",
-                    publisher,
-                    attr_name,
-                    attr_value,
-                    len(content),
-                )
-                return _clean_html_text(content)
+        result = _try_selectors(html_content, selectors, publisher)
+        if result:
+            return result
+        result = _try_meta_tags(html_content, meta_tags, publisher)
+        if result:
+            return result
     else:
-        # Default order: meta tags first, then selectors
-        for attr_name, attr_value in meta_tags:
-            content = _extract_meta_tag(html_content, attr_name, attr_value)
-            if content and len(content) >= 100:
-                logger.info(
-                    "Extracted abstract from %s meta tag [%s=%s] (%d chars)",
-                    publisher,
-                    attr_name,
-                    attr_value,
-                    len(content),
-                )
-                return _clean_html_text(content)
+        result = _try_meta_tags(html_content, meta_tags, publisher)
+        if result:
+            return result
+        result = _try_selectors(html_content, selectors, publisher)
+        if result:
+            return result
 
-        # Try publisher-specific selectors
-        for selector in selectors:
-            content = _extract_from_selector(html_content, selector)
-            if content:
-                logger.info(
-                    "Extracted abstract from %s selector (%d chars)",
-                    publisher,
-                    len(content),
-                )
-                return content
-
-    # Try generic meta tags
-    for attr_name, attr_value in GENERIC_META_TAGS:
-        content = _extract_meta_tag(html_content, attr_name, attr_value)
-        if content and len(content) >= 100:
-            logger.info(
-                "Extracted abstract from generic meta tag [%s=%s] (%d chars)",
-                attr_name,
-                attr_value,
-                len(content),
-            )
-            return _clean_html_text(content)
-
-    # Try generic selectors
-    for selector in GENERIC_SELECTORS:
-        content = _extract_from_selector(html_content, selector)
-        if content:
-            logger.info("Extracted abstract from generic selector (%d chars)", len(content))
-            return content
+    # Try generic extraction
+    result = _try_meta_tags(html_content, GENERIC_META_TAGS, "generic")
+    if result:
+        return result
+    result = _try_selectors(html_content, GENERIC_SELECTORS, "generic")
+    if result:
+        return result
 
     logger.debug("Rule-based extraction failed, will need LLM fallback")
     return None
 
 
 class PublisherExtractor:
-    """Publisher-aware abstract extractor.
+    """Publisher-aware abstract extractor (backward compatibility wrapper).
+
+    This class wraps the `extract_abstract()` function for compatibility with
+    existing code that uses the class-based interface. For new code, prefer
+    using `extract_abstract()` directly.
 
     Tries rule-based extraction first, with optional LLM fallback.
     """
