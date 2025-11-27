@@ -75,13 +75,19 @@ PUBLISHER_CONFIGS: Dict[str, Dict] = {
         ],
         "selectors": [
             # ScienceDirect abstract sections - order matters!
-            # 1. Preview pages: "abstract author" with sp[N] content div
+            # 1. New layout: abstract section with data-testid or id containing abstract
+            r'<div[^>]*(?:data-testid|id)=["\'][^"\']*abstract[^"\']*["\'][^>]*>(.*?)</div>',
+            # 2. Preview pages: "abstract author" with sp[N] content div
             r'<div[^>]*class=["\']abstract author["\'][^>]*>.*?<h2[^>]*>Abstract</h2>.*?<div[^>]*id=["\']sp\d+["\'][^>]*>(.*?)</div>',
-            # 2. Preview pages: "abstract author" with abss[N] content div
+            # 3. Preview pages: "abstract author" with abss[N] content div
             r'<div[^>]*class=["\']abstract author["\'][^>]*>.*?<h2[^>]*>Abstract</h2>.*?<div[^>]*id=["\']abss\d+["\'][^>]*>(.*?)</div>',
-            # 3. Full article pages: "abstract author" with u-margin-s-bottom content div (dynamic IDs like d1e####)
+            # 4. Full article pages: "abstract author" with u-margin-s-bottom content div
             r'<div[^>]*class=["\']abstract author["\'][^>]*>.*?<h2[^>]*>Abstract</h2>.*?<div[^>]*class=["\']u-margin-s-bottom["\'][^>]*>(.*?)</div>',
-            # 4. Legacy patterns for other ScienceDirect layouts
+            # 5. Flexible abstract author section - capture content after h2
+            r'<div[^>]*class=["\'][^"\']*abstract[^"\']*["\'][^>]*>.*?<h2[^>]*>.*?</h2>\s*<div[^>]*>(.*?)</div>',
+            # 6. Abstract section with paragraph content
+            r'<section[^>]*class=["\'][^"\']*abstract[^"\']*["\'][^>]*>.*?<p[^>]*>(.*?)</p>',
+            # 7. Legacy patterns for other ScienceDirect layouts
             r'<div[^>]*id=["\']abs000\d["\'][^>]*>(.*?)</div>',
             r'<section[^>]*id=["\']abstracts?["\'][^>]*>.*?<div[^>]*>(.*?)</div>',
         ],

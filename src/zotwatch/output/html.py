@@ -133,24 +133,30 @@ _FALLBACK_TEMPLATE = """<!DOCTYPE html>
         <article class="bg-bg-card rounded-lg border border-border-color overflow-hidden hover:border-accent/50 transition-colors">
           <div class="p-5">
             <!-- Title and metadata -->
-            <div class="flex items-start justify-between mb-3">
-              <div class="flex-1">
-                <div class="flex items-center gap-2 mb-2 flex-wrap">
-                  <span class="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-medium bg-accent/10 text-accent border border-accent/30">
-                    匹配度 {{ '%.0f'|format(work.rerank_score * 100) }}%
-                  </span>
-                  <span class="text-xs text-text-secondary">{{ work.source }}</span>
-                </div>
-                <h2 class="text-lg font-semibold text-text-primary leading-tight">
+            <div class="mb-3">
+              <!-- Tags row -->
+              <div class="flex items-center gap-2 mb-2 flex-wrap">
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-medium bg-accent/10 text-accent border border-accent/30">
+                  匹配度 {{ '%.0f'|format(work.rerank_score * 100) }}%
+                </span>
+                <span class="text-xs text-text-secondary">{{ work.source }}</span>
+                <!-- Date: visible on mobile, hidden on md+ -->
+                <span class="text-xs text-text-secondary md:hidden">· {{ work.published.strftime('%Y-%m-%d') if work.published else '未知' }}</span>
+              </div>
+              <!-- Title and date row -->
+              <div class="flex items-start justify-between gap-4">
+                <h2 class="text-lg font-semibold text-text-primary leading-tight flex-1">
                   <a href="{{ work.url or '#' }}" target="_blank" rel="noopener" class="hover:text-accent transition-colors">
                     {{ work.title }}
                   </a>
                 </h2>
+                <!-- Date: hidden on mobile, visible on md+ -->
+                <div class="hidden md:block text-right text-sm text-text-secondary flex-shrink-0">
+                  <div class="font-medium">{{ work.published.strftime('%Y-%m-%d') if work.published else '未知' }}</div>
+                </div>
               </div>
-              <div class="ml-4 text-right text-sm text-text-secondary flex-shrink-0">
-                <div class="font-medium">{{ work.published.strftime('%Y-%m-%d') if work.published else '未知' }}</div>
-                <div class="text-xs text-text-secondary max-w-[150px] break-words leading-tight" title="{{ work.venue or '' }}">{{ work.venue or '未知来源' }}</div>
-              </div>
+              <!-- Venue: below title on mobile -->
+              <div class="mt-1 text-xs text-text-secondary" title="{{ work.venue or '' }}">{{ work.venue or '未知来源' }}</div>
             </div>
 
             <!-- Authors -->
@@ -270,29 +276,35 @@ _FALLBACK_TEMPLATE = """<!DOCTYPE html>
         <article class="bg-bg-card rounded-lg border border-border-color overflow-hidden hover:border-accent/50 transition-colors">
           <div class="p-5">
             <!-- Title and metadata -->
-            <div class="flex items-start justify-between mb-3">
-              <div class="flex-1">
-                <div class="flex items-center gap-2 mb-2 flex-wrap">
-                  <span class="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-medium
-                    {% if work.label == 'must_read' %}bg-green-100 text-green-700 border border-green-300
-                    {% elif work.label == 'consider' %}bg-amber-100 text-amber-700 border border-amber-300
-                    {% else %}bg-bg-hover text-text-secondary border border-border-color{% endif %}">
-                    {% if work.label == 'must_read' %}必读{% elif work.label == 'consider' %}推荐{% else %}参考{% endif %}
-                  </span>
-                  <span class="text-xs text-text-secondary">评分 {{ '%.2f'|format(work.score) }}</span>
-                  <span class="text-xs text-text-secondary">·</span>
-                  <span class="text-xs text-text-secondary">{{ work.source }}</span>
-                </div>
-                <h2 class="text-lg font-semibold text-text-primary leading-tight">
+            <div class="mb-3">
+              <!-- Tags row -->
+              <div class="flex items-center gap-2 mb-2 flex-wrap">
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-medium
+                  {% if work.label == 'must_read' %}bg-green-100 text-green-700 border border-green-300
+                  {% elif work.label == 'consider' %}bg-amber-100 text-amber-700 border border-amber-300
+                  {% else %}bg-bg-hover text-text-secondary border border-border-color{% endif %}">
+                  {% if work.label == 'must_read' %}必读{% elif work.label == 'consider' %}推荐{% else %}参考{% endif %}
+                </span>
+                <span class="text-xs text-text-secondary">评分 {{ '%.2f'|format(work.score) }}</span>
+                <span class="text-xs text-text-secondary">·</span>
+                <span class="text-xs text-text-secondary">{{ work.source }}</span>
+                <!-- Date: visible on mobile, hidden on md+ -->
+                <span class="text-xs text-text-secondary md:hidden">· {{ work.published.strftime('%Y-%m-%d') if work.published else '未知' }}</span>
+              </div>
+              <!-- Title and date row -->
+              <div class="flex items-start justify-between gap-4">
+                <h2 class="text-lg font-semibold text-text-primary leading-tight flex-1">
                   <a href="{{ work.url or '#' }}" target="_blank" rel="noopener" class="hover:text-accent transition-colors">
                     {{ work.title }}
                   </a>
                 </h2>
+                <!-- Date: hidden on mobile, visible on md+ -->
+                <div class="hidden md:block text-right text-sm text-text-secondary flex-shrink-0">
+                  <div class="font-medium">{{ work.published.strftime('%Y-%m-%d') if work.published else '未知' }}</div>
+                </div>
               </div>
-              <div class="ml-4 text-right text-sm text-text-secondary flex-shrink-0">
-                <div class="font-medium">{{ work.published.strftime('%Y-%m-%d') if work.published else '未知' }}</div>
-                <div class="text-xs text-text-secondary max-w-[150px] break-words leading-tight" title="{{ work.venue or '' }}">{{ work.venue or '未知来源' }}</div>
-              </div>
+              <!-- Venue: below title -->
+              <div class="mt-1 text-xs text-text-secondary" title="{{ work.venue or '' }}">{{ work.venue or '未知来源' }}</div>
             </div>
 
             <!-- Authors -->

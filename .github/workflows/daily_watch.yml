@@ -92,7 +92,7 @@ jobs:
         run: uv run python -m camoufox fetch
 
       - name: Run ZotWatch
-        run: uv run zotwatch watch --top 30
+        run: uv run zotwatch watch --report --rss --top 30
 
       # Deploy to external public repository
       - name: Prepare Pages
@@ -130,22 +130,10 @@ jobs:
           # Overwrite feed.xml with latest version
           cp ../public/feed.xml ${{ env.DEPLOY_SUBDIR }}/ 2>/dev/null || true
 
-          # Generate index.html based on all reports (historical + new)
-          LATEST=$(ls -t ${{ env.DEPLOY_SUBDIR }}/report-*.html 2>/dev/null | head -1 | xargs -r basename || echo "")
+          # Copy latest report as index.html
+          LATEST=$(ls -t ${{ env.DEPLOY_SUBDIR }}/report-*.html 2>/dev/null | head -1 || echo "")
           if [ -n "$LATEST" ]; then
-            cat > ${{ env.DEPLOY_SUBDIR }}/index.html << EOF
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <meta charset="utf-8">
-            <meta http-equiv="refresh" content="0; url=$LATEST">
-            <title>ZotWatch - Redirecting...</title>
-          </head>
-          <body>
-            <p>Redirecting to <a href="$LATEST">latest report</a>...</p>
-          </body>
-          </html>
-          EOF
+            cp "$LATEST" ${{ env.DEPLOY_SUBDIR }}/index.html
           fi
 
           # Commit and push
