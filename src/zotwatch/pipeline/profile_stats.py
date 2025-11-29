@@ -19,14 +19,16 @@ from zotwatch.core.models import (
 logger = logging.getLogger(__name__)
 
 # Keywords that indicate a conference venue
-CONFERENCE_KEYWORDS = frozenset({
-    "conference",
-    "symposium",
-    "workshop",
-    "proceedings",
-    "annual meeting",
-    "congress",
-})
+CONFERENCE_KEYWORDS = frozenset(
+    {
+        "conference",
+        "symposium",
+        "workshop",
+        "proceedings",
+        "annual meeting",
+        "congress",
+    }
+)
 
 
 class ProfileStatsExtractor:
@@ -126,10 +128,7 @@ class ProfileStatsExtractor:
                     if normalized not in exclude_set:
                         tag_counter[normalized] += 1
 
-        return [
-            KeywordStats(keyword=kw, count=cnt, source="tag")
-            for kw, cnt in tag_counter.most_common(top_n)
-        ]
+        return [KeywordStats(keyword=kw, count=cnt, source="tag") for kw, cnt in tag_counter.most_common(top_n)]
 
     def count_frequent_authors(
         self,
@@ -343,11 +342,7 @@ class ProfileStatsExtractor:
                         recent_tags[normalized] += 1
 
         # Find "new" keywords (only appear in recent papers)
-        new_keywords = [
-            tag
-            for tag, cnt in recent_tags.most_common(10)
-            if cnt > 0 and all_tags[tag] == cnt
-        ][:5]
+        new_keywords = [tag for tag, cnt in recent_tags.most_common(10) if cnt > 0 and all_tags[tag] == cnt][:5]
 
         return RecentPapersAnalysis(
             period_days=self.recent_days,

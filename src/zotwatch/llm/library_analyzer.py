@@ -9,7 +9,6 @@ from zotwatch.core.models import (
     ResearcherProfileInsights,
     ZoteroItem,
 )
-from zotwatch.utils.datetime import utc_now
 
 from .base import BaseLLMProvider
 from .prompts import DOMAIN_CLASSIFICATION_PROMPT, PROFILE_ANALYSIS_PROMPT
@@ -130,30 +129,21 @@ class LibraryAnalyzer:
         """Format domains for prompt."""
         if not domains:
             return "暂无领域分类数据"
-        lines = [
-            f"- {d.domain}: {d.paper_count}篇 ({d.percentage:.1f}%)"
-            for d in domains
-        ]
+        lines = [f"- {d.domain}: {d.paper_count}篇 ({d.percentage:.1f}%)" for d in domains]
         return "\n".join(lines)
 
     def _format_authors(self, authors: list) -> str:
         """Format authors for prompt."""
         if not authors:
             return "暂无作者数据"
-        lines = [
-            f"- {a.author}: {a.paper_count}篇"
-            for a in authors
-        ]
+        lines = [f"- {a.author}: {a.paper_count}篇" for a in authors]
         return "\n".join(lines)
 
     def _format_venues(self, venues: list) -> str:
         """Format venues for prompt."""
         if not venues:
             return "暂无期刊/会议数据"
-        lines = [
-            f"- {v.venue} [{v.venue_type}]: {v.paper_count}篇"
-            for v in venues
-        ]
+        lines = [f"- {v.venue} [{v.venue_type}]: {v.paper_count}篇" for v in venues]
         return "\n".join(lines)
 
     def _format_keywords(self, keywords: list) -> str:
@@ -169,11 +159,7 @@ class LibraryAnalyzer:
 
         # Only show last 12 quarters
         recent_trends = trends[-12:]
-        lines = [
-            f"- {t.quarter}: {t.paper_count}篇"
-            for t in recent_trends
-            if t.paper_count > 0
-        ]
+        lines = [f"- {t.quarter}: {t.paper_count}篇" for t in recent_trends if t.paper_count > 0]
         if not lines:
             return "近期无新增论文"
         return "\n".join(lines)

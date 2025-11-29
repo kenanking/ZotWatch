@@ -58,9 +58,7 @@ class JournalScorer:
 
         return whitelist
 
-    def compute_score(
-        self, candidate: CandidateWork
-    ) -> tuple[float, float | None, bool]:
+    def compute_score(self, candidate: CandidateWork) -> tuple[float, float | None, bool]:
         """Compute IF score for a candidate.
 
         Args:

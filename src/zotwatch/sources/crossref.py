@@ -88,7 +88,9 @@ class CrossrefSource(BaseSource):
 
         # Build filter string with ISSNs (OR logic)
         issn_filter = ",".join(f"issn:{issn}" for issn in issns)
-        filter_str = f"from-created-date:{since.date().isoformat()},until-created-date:{until.date().isoformat()},{issn_filter}"
+        filter_str = (
+            f"from-created-date:{since.date().isoformat()},until-created-date:{until.date().isoformat()},{issn_filter}"
+        )
 
         params = {
             "filter": filter_str,

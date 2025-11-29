@@ -14,7 +14,14 @@ from zotwatch.core.models import InterestWork, RankedWork, ResearcherProfile
 from zotwatch.infrastructure.embedding import EmbeddingCache, VoyageEmbedding, VoyageReranker
 from zotwatch.infrastructure.enrichment.cache import MetadataCache
 from zotwatch.infrastructure.storage import ProfileStorage
-from zotwatch.llm import InterestRefiner, KimiClient, LibraryAnalyzer, OpenRouterClient, OverallSummarizer, PaperSummarizer
+from zotwatch.llm import (
+    InterestRefiner,
+    KimiClient,
+    LibraryAnalyzer,
+    OpenRouterClient,
+    OverallSummarizer,
+    PaperSummarizer,
+)
 from zotwatch.llm.base import BaseLLMProvider
 from zotwatch.output import render_html, write_rss
 from zotwatch.output.push import ZoteroPusher

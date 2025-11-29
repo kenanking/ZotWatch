@@ -3,7 +3,6 @@
 import logging
 from pathlib import Path
 
-import numpy as np
 
 from zotwatch.config.settings import Settings
 from zotwatch.core.models import ProfileArtifacts
