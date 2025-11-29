@@ -280,6 +280,19 @@ class ProfileStorage:
 
 def _row_to_item(row: sqlite3.Row) -> ZoteroItem:
     """Convert database row to ZoteroItem."""
+    from datetime import datetime
+
+    raw = json.loads(row["raw_json"])
+
+    # Parse dateAdded from raw data
+    date_added = None
+    if raw_data := raw.get("data"):
+        if date_added_str := raw_data.get("dateAdded"):
+            try:
+                date_added = datetime.fromisoformat(date_added_str.replace("Z", "+00:00"))
+            except (ValueError, AttributeError):
+                pass
+
     return ZoteroItem(
         key=row["key"],
         version=row["version"],
@@ -291,7 +304,8 @@ def _row_to_item(row: sqlite3.Row) -> ZoteroItem:
         year=row["year"],
         doi=row["doi"],
         url=row["url"],
-        raw=json.loads(row["raw_json"]),
+        date_added=date_added,
+        raw=raw,
         content_hash=row["content_hash"],
     )
 

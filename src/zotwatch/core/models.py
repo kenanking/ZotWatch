@@ -19,6 +19,7 @@ class ZoteroItem(BaseModel):
     year: int | None = None
     doi: str | None = None
     url: str | None = None
+    date_added: datetime | None = None  # When item was added to Zotero library
     raw: dict[str, object] = Field(default_factory=dict)
     content_hash: str | None = None  # Hash of content used for embedding
 
@@ -40,6 +41,15 @@ class ZoteroItem(BaseModel):
         creators = [
             " ".join(filter(None, [c.get("firstName"), c.get("lastName")])).strip() for c in data.get("creators", [])
         ]
+
+        # Parse dateAdded (format: "2024-01-15T10:30:00Z")
+        date_added = None
+        if date_added_str := data.get("dateAdded"):
+            try:
+                date_added = datetime.fromisoformat(date_added_str.replace("Z", "+00:00"))
+            except (ValueError, AttributeError):
+                pass
+
         return cls(
             key=data.get("key") or item.get("key"),
             version=data.get("version") or item.get("version", 0),
@@ -51,6 +61,7 @@ class ZoteroItem(BaseModel):
             year=_safe_int(data.get("date")),
             doi=data.get("DOI"),
             url=data.get("url"),
+            date_added=date_added,
             raw=item,
         )
 
@@ -252,6 +263,7 @@ class ResearcherProfile(BaseModel):
     # Statistics
     total_papers: int
     year_range: tuple[int, int] = (0, 0)
+    collection_duration: str | None = None  # "X年Y月" format
     frequent_author_count: int = 0  # Authors with ≥N appearances
 
     # Distributions

@@ -123,7 +123,8 @@ PROFILE_ANALYSIS_PROMPT = """请根据以下研究者的**文献阅读和收藏�
 
 ## 基础统计
 - 收藏文献总数：{total_papers}篇
-- 收藏时间范围：{year_range}
+- 收藏时长：{collection_duration}
+- 论文发表年份：{year_range}
 
 ## 阅读兴趣领域分布（Top 5）
 {top_domains}

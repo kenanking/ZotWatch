@@ -96,6 +96,7 @@ class LibraryAnalyzer:
 
         prompt = PROFILE_ANALYSIS_PROMPT.format(
             total_papers=profile.total_papers,
+            collection_duration=profile.collection_duration or "未知",
             year_range=f"{profile.year_range[0]}-{profile.year_range[1]}",
             top_domains=self._format_domains(profile.domains[:5]),
             top_authors=self._format_authors(profile.authors[:10]),

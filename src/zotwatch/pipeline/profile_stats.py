@@ -81,10 +81,12 @@ class ProfileStatsExtractor:
 
         library_hash = self.compute_library_hash(items)
         frequent_author_count = self.count_frequent_authors(items, author_min_count)
+        collection_duration = self._calculate_collection_duration(items)
 
         return ResearcherProfile(
             total_papers=len(items),
             year_range=year_range,
+            collection_duration=collection_duration,
             frequent_author_count=frequent_author_count,
             keywords=self._extract_keywords(items, exclude=exclude_keywords),
             authors=self._extract_authors(items),
@@ -353,3 +355,31 @@ class ProfileStatsExtractor:
             new_keywords=new_keywords,
             emerging_domains=[],  # Will be filled by LLM
         )
+
+    def _calculate_collection_duration(self, items: list[ZoteroItem]) -> str | None:
+        """Calculate collection duration as 'X年Y月' format.
+
+        Args:
+            items: Zotero items with date_added field.
+
+        Returns:
+            Duration string in 'X年Y月' format, or None if no date_added data.
+        """
+        dates = [i.date_added for i in items if i.date_added]
+        if not dates:
+            return None
+
+        earliest = min(dates)
+        latest = max(dates)
+
+        # Calculate difference in months
+        total_months = (latest.year - earliest.year) * 12 + (latest.month - earliest.month)
+        years = total_months // 12
+        months = total_months % 12
+
+        if years == 0:
+            return f"{months}月"
+        elif months == 0:
+            return f"{years}年"
+        else:
+            return f"{years}年{months}月"

@@ -77,8 +77,8 @@
             <div class="text-xs text-text-secondary">收藏论文</div>
           </div>
           <div>
-            <div class="text-xl font-bold text-accent">{{ researcher_profile.year_range[0] }}-{{ researcher_profile.year_range[1] }}</div>
-            <div class="text-xs text-text-secondary">收藏年份</div>
+            <div class="text-xl font-bold text-accent">{{ researcher_profile.collection_duration or "N/A" }}</div>
+            <div class="text-xs text-text-secondary">收藏时长</div>
           </div>
           <div>
             <div class="text-xl font-bold text-accent">&gt;{{ researcher_profile.domains|length }}</div>
