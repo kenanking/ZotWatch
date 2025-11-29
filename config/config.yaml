@@ -16,7 +16,7 @@ sources:
       - "cs.CV"   # Computer Vision and Pattern Recognition
       - "cs.AI"   # Artificial Intelligence
       - "stat.ML" # Machine Learning (Statistics)
-    days_back: 5
+    days_back: 4
     max_results: 3000
   crossref:
     enabled: true

@@ -110,8 +110,8 @@
       </div>
       {% endif %}
 
-      <!-- Charts Row: Domains + Trends + Year Distribution -->
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+      <!-- Charts Row: Domains + Trends -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
         <!-- Research Domains Chart -->
         {% if researcher_profile.domains %}
         <div class="bg-bg-card rounded-lg border border-border-color p-4">
@@ -131,17 +131,17 @@
           </div>
         </div>
         {% endif %}
-
-        <!-- Year Distribution Chart -->
-        {% if researcher_profile.year_distribution %}
-        <div class="bg-bg-card rounded-lg border border-border-color p-4">
-          <h4 class="text-sm font-medium text-text-primary mb-3">论文发表年份分布</h4>
-          <div style="height: 180px;">
-            <canvas id="yearDistChart"></canvas>
-          </div>
-        </div>
-        {% endif %}
       </div>
+
+      <!-- Year Distribution Chart (full width) -->
+      {% if researcher_profile.year_distribution %}
+      <div class="bg-bg-card rounded-lg border border-border-color p-4 mb-4">
+        <h4 class="text-sm font-medium text-text-primary mb-3">论文发表年份分布</h4>
+        <div style="height: 180px;">
+          <canvas id="yearDistChart"></canvas>
+        </div>
+      </div>
+      {% endif %}
 
       <!-- Authors and Venues Row -->
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
