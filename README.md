@@ -29,7 +29,7 @@ uv sync
 ZotWatch 使用 [Camoufox](https://github.com/nicholaswan/camoufox)（基于 Firefox 的反检测浏览器）从受 Cloudflare 保护的出版商网站抓取论文摘要。安装依赖后需要下载浏览器二进制文件：
 
 ```bash
-python -m camoufox fetch
+uv run python -m camoufox fetch
 ```
 
 > **注意**：首次下载约需 1-2 分钟，浏览器文件约 200MB。GitHub Actions 会自动处理此步骤并缓存。

@@ -43,6 +43,7 @@ class StealthBrowser:
 
     _browser = None
     _context = None
+    _camoufox_ctx = None
     _initialized = False
     _init_lock = threading.Lock()
     _profile_path = DEFAULT_PROFILE_PATH
@@ -114,7 +115,9 @@ class StealthBrowser:
         # Create browser with anti-detect settings
         # Note: persistent_context causes issues with Cloudflare bypass
         # We'll manage cookies separately if needed
-        browser = await AsyncCamoufox(
+        # Keep a reference to the AsyncCamoufox context manager so we can
+        # properly close Playwright and its background tasks on shutdown.
+        cls._camoufox_ctx = AsyncCamoufox(
             headless=True,
             geoip=True,
             # Required for camoufox-captcha to traverse Shadow DOM
@@ -124,7 +127,9 @@ class StealthBrowser:
             i_know_what_im_doing=True,
             # Enable human-like mouse movements and interactions
             humanize=True,
-        ).__aenter__()
+        )
+
+        browser = await cls._camoufox_ctx.__aenter__()
 
         # Browser acts as context for new_page
         return browser, browser
@@ -502,13 +507,18 @@ class StealthBrowser:
     def close(cls):
         """Clean up browser resources."""
         with cls._init_lock:
-            if cls._browser:
+            # Close Camoufox/Playwright context first so that all background
+            # tasks (including Playwright's Connection.run) are shut down
+            # cleanly before we stop the event loop.
+            if cls._camoufox_ctx:
                 try:
-                    cls._run_async(cls._browser.__aexit__(None, None, None))
+                    cls._run_async(cls._camoufox_ctx.__aexit__(None, None, None))
                 except Exception as e:
-                    logger.debug("Error closing browser: %s", e)
-                cls._browser = None
-                cls._context = None
+                    logger.debug("Error closing Camoufox context: %s", e)
+                cls._camoufox_ctx = None
+
+            cls._browser = None
+            cls._context = None
 
             if cls._event_loop:
                 try:
@@ -516,6 +526,7 @@ class StealthBrowser:
                 except Exception:
                     pass
                 cls._event_loop = None
+                cls._loop_thread = None
 
             cls._initialized = False
 
