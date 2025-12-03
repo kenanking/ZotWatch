@@ -80,19 +80,29 @@ def _fetch_parallel(sources: list) -> list[CandidateWork]:
         future_to_source = {executor.submit(source.fetch): source for source in sources}
 
         # Collect results as they complete
-        for future in as_completed(future_to_source, timeout=DEFAULT_TIMEOUT_PER_SOURCE * len(sources)):
-            source = future_to_source[future]
-            try:
-                candidates = future.result(timeout=DEFAULT_TIMEOUT_PER_SOURCE)
-                results.extend(candidates)
-                logger.info("Fetched %d candidates from %s", len(candidates), source.name)
-            except TimeoutError:
-                error_msg = f"Timeout after {DEFAULT_TIMEOUT_PER_SOURCE}s"
-                errors[source.name] = TimeoutError(error_msg)
-                logger.error("Failed to fetch from %s: %s", source.name, error_msg)
-            except Exception as exc:
-                errors[source.name] = exc
-                logger.error("Failed to fetch from %s: %s", source.name, exc)
+        try:
+            for future in as_completed(future_to_source, timeout=DEFAULT_TIMEOUT_PER_SOURCE):
+                source = future_to_source[future]
+                try:
+                    candidates = future.result(timeout=DEFAULT_TIMEOUT_PER_SOURCE)
+                    results.extend(candidates)
+                    logger.info("Fetched %d candidates from %s", len(candidates), source.name)
+                except TimeoutError:
+                    error_msg = f"Timeout after {DEFAULT_TIMEOUT_PER_SOURCE}s"
+                    errors[source.name] = TimeoutError(error_msg)
+                    logger.error("Failed to fetch from %s: %s", source.name, error_msg)
+                except Exception as exc:
+                    errors[source.name] = exc
+                    logger.error("Failed to fetch from %s: %s", source.name, exc)
+        except TimeoutError:
+            # as_completed() iterator timed out - no futures completed within timeout window
+            error_msg = f"as_completed() timed out after {DEFAULT_TIMEOUT_PER_SOURCE}s (no futures completed)"
+            logger.error(error_msg)
+            # Mark all pending futures as timed out
+            for future, source in future_to_source.items():
+                if source.name not in errors and not future.done():
+                    errors[source.name] = TimeoutError(error_msg)
+                    logger.error("Source %s timed out (no result within timeout window)", source.name)
 
     if errors:
         logger.warning(
