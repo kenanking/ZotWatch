@@ -1,7 +1,7 @@
 """Candidate fetching pipeline."""
 
 import logging
-from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
+from concurrent.futures import ThreadPoolExecutor, TimeoutError, as_completed
 from pathlib import Path
 
 from zotwatch.config.settings import Settings

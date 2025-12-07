@@ -7,9 +7,8 @@ from pathlib import Path
 from typing import Self
 
 from zotwatch.core.exceptions import ValidationError
-from zotwatch.core.models import PaperSummary, ResearcherProfile, ZoteroItem
+from zotwatch.core.models import ClusteredProfile, PaperSummary, ResearcherProfile, ZoteroItem
 from zotwatch.utils.datetime import utc_now
-
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS items (
@@ -56,6 +55,13 @@ CREATE TABLE IF NOT EXISTS title_translations (
     translated_title TEXT NOT NULL,
     target_language TEXT NOT NULL,
     model_used TEXT NOT NULL,
+    generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS clustered_profile (
+    id INTEGER PRIMARY KEY DEFAULT 1,
+    embedding_signature TEXT NOT NULL,
+    profile_json TEXT NOT NULL,
     generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -201,6 +207,14 @@ class ProfileStorage:
         """Get all items as a list."""
         return list(self.iter_items())
 
+    def get_items_with_abstract(self) -> list[ZoteroItem]:
+        """Get items that have non-empty abstracts (used for profile/index builds)."""
+        # Stable order by key to keep embedding/weight alignment deterministic
+        cur = self.connect().execute(
+            "SELECT * FROM items WHERE abstract IS NOT NULL AND TRIM(abstract) != '' ORDER BY key"
+        )
+        return [_row_to_item(row) for row in cur]
+
     def count_items(self) -> int:
         """Count total items."""
         cur = self.connect().execute("SELECT COUNT(*) FROM items")
@@ -300,6 +314,50 @@ class ProfileStorage:
     def clear_profile_cache(self) -> None:
         """Clear profile analysis cache."""
         self.connect().execute("DELETE FROM profile_analysis")
+        self.connect().commit()
+
+    # Clustered profile helpers
+
+    def get_clustered_profile(self, embedding_signature: str) -> ClusteredProfile | None:
+        """Get cached clustered profile if signature matches.
+
+        Args:
+            embedding_signature: Embedding provider and model signature
+                                 (e.g., "voyage:voyage-3.5").
+
+        Returns:
+            Cached ClusteredProfile if signature matches, None otherwise.
+        """
+        cur = self.connect().execute(
+            "SELECT profile_json FROM clustered_profile WHERE embedding_signature = ?",
+            (embedding_signature,),
+        )
+        row = cur.fetchone()
+        if row:
+            return ClusteredProfile.model_validate_json(row["profile_json"])
+        return None
+
+    def save_clustered_profile(self, profile: ClusteredProfile) -> None:
+        """Save clustered profile to cache.
+
+        Args:
+            profile: ClusteredProfile to cache.
+        """
+        if not profile.embedding_signature:
+            raise ValidationError("ClusteredProfile must have embedding_signature set for caching")
+
+        self.connect().execute(
+            """
+            INSERT OR REPLACE INTO clustered_profile (id, embedding_signature, profile_json, generated_at)
+            VALUES (1, ?, ?, CURRENT_TIMESTAMP)
+            """,
+            (profile.embedding_signature, profile.model_dump_json()),
+        )
+        self.connect().commit()
+
+    def clear_clustered_profile_cache(self) -> None:
+        """Clear clustered profile cache."""
+        self.connect().execute("DELETE FROM clustered_profile")
         self.connect().commit()
 
     # Translation cache helpers

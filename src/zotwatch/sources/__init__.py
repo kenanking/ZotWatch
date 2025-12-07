@@ -1,7 +1,7 @@
 """Data source implementations."""
 
-from .base import SourceRegistry, get_enabled_sources
 from .arxiv import ArxivSource
+from .base import SourceRegistry, get_enabled_sources
 from .crossref import CrossrefSource
 from .zotero import ZoteroClient, ZoteroIngestor
 

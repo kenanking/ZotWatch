@@ -3,9 +3,11 @@
 import logging
 from pathlib import Path
 
+import numpy as np
+
 from zotwatch.config.settings import Settings
 from zotwatch.core.exceptions import ProfileBuildError
-from zotwatch.core.models import ProfileArtifacts
+from zotwatch.core.models import ClusteredProfile, ProfileArtifacts, ZoteroItem
 from zotwatch.infrastructure.embedding import (
     CachingEmbeddingProvider,
     EmbeddingCache,
@@ -14,6 +16,7 @@ from zotwatch.infrastructure.embedding import (
 )
 from zotwatch.infrastructure.embedding.base import BaseEmbeddingProvider
 from zotwatch.infrastructure.storage import ProfileStorage
+from zotwatch.utils.temporal import compute_batch_weights
 
 logger = logging.getLogger(__name__)
 
@@ -71,26 +74,25 @@ class ProfileBuilder:
             full: If True, invalidate all profile embeddings and recompute.
                   If False (default), use cached embeddings where available.
         """
-        all_items = list(self.storage.iter_items())
-        if not all_items:
+        total_items = self.storage.count_items()
+        items = self.storage.get_items_with_abstract()
+
+        if total_items == 0:
             raise ProfileBuildError("No items found in storage; run ingest before building profile.")
 
-        # Filter items: only include those with abstracts
-        items_with_abstract = [item for item in all_items if item.abstract]
-        items_without_abstract = len(all_items) - len(items_with_abstract)
+        items_without_abstract = total_items - len(items)
 
         logger.info(
             "Library statistics: %d items with abstract, %d items without abstract",
-            len(items_with_abstract),
+            len(items),
             items_without_abstract,
         )
 
-        if not items_with_abstract:
+        if not items:
             raise ProfileBuildError(
                 "No items with abstracts found in storage; profile building requires items with abstracts."
             )
 
-        items = items_with_abstract
         logger.info("Building profile from %d items (with abstracts)", len(items))
 
         # If full rebuild requested and cache is available, invalidate profile embeddings
@@ -117,10 +119,73 @@ class ProfileBuilder:
         index.save(self.artifacts.faiss_path)
 
         # Persist embedding signature to detect provider/model changes across runs
-        signature = f"{self.settings.embedding.provider}:{self.settings.embedding.model}"
+        signature = self.settings.embedding.signature
         self.storage.set_metadata("embedding_signature", signature)
 
+        # Run clustering if enabled
+        if self.settings.profile.clustering.enabled:
+            self._run_clustering(vectors, items, signature)
+
         return self.artifacts
+
+    def _run_clustering(
+        self,
+        vectors: np.ndarray,
+        items: list[ZoteroItem],
+        embedding_signature: str,
+    ) -> ClusteredProfile | None:
+        """Run k-means clustering on profile embeddings.
+
+        Args:
+            vectors: Embedding matrix (N x dim).
+            items: Corresponding ZoteroItem list.
+            embedding_signature: Embedding provider and model signature.
+
+        Returns:
+            ClusteredProfile if clustering was successful, None otherwise.
+        """
+        from zotwatch.pipeline.profile_clusterer import ProfileClusterer
+
+        clusterer = ProfileClusterer(
+            config=self.settings.profile.clustering,
+            embedding_signature=embedding_signature,
+        )
+
+        # Compute temporal weights if enabled
+        temporal_weights = None
+        temporal_config = self.settings.profile.clustering.temporal
+        if temporal_config.enabled:
+            weights_list = compute_batch_weights(
+                items,
+                halflife_days=temporal_config.halflife_days,
+                min_weight=temporal_config.min_weight,
+            )
+            temporal_weights = np.array(weights_list, dtype=np.float32)
+            logger.info(
+                "Computed temporal weights for %d items (halflife=%.0f days, mean_weight=%.3f)",
+                len(items),
+                temporal_config.halflife_days,
+                np.mean(temporal_weights),
+            )
+
+        clustered_profile = clusterer.cluster(vectors.copy(), items, temporal_weights=temporal_weights)
+
+        if clustered_profile.valid_cluster_count == 0:
+            logger.info("No valid clusters created (library may be too small)")
+            return None
+
+        # Save to storage
+        self.storage.save_clustered_profile(clustered_profile)
+
+        logger.info(
+            "Created %d valid clusters covering %d/%d papers (total_effective_size=%.2f)",
+            clustered_profile.valid_cluster_count,
+            clustered_profile.papers_in_valid_clusters,
+            clustered_profile.total_papers,
+            clustered_profile.total_effective_size,
+        )
+
+        return clustered_profile
 
 
 __all__ = ["ProfileBuilder"]

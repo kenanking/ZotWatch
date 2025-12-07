@@ -25,7 +25,7 @@ except ImportError:
     pass
 
 # Import ZotWatch config loader
-from zotwatch.config.settings import load_settings, Settings
+from zotwatch.config.settings import Settings, load_settings
 from zotwatch.core.exceptions import ConfigurationError
 
 
@@ -305,8 +305,8 @@ def test_voyage_embedding(api_key: str, model: str) -> TestResult:
         return TestResult("Voyage Embedding", Status.FAILED, "Missing API key")
 
     try:
-        import voyageai
         import numpy as np
+        import voyageai
 
         client = voyageai.Client(api_key=api_key)
         result = client.embed(
@@ -395,8 +395,9 @@ def test_dashscope_embedding(api_key: str, model: str) -> TestResult:
         return TestResult("DashScope Embedding", Status.FAILED, "Missing API key")
 
     try:
-        from dashscope import TextEmbedding
         from http import HTTPStatus
+
+        from dashscope import TextEmbedding
 
         resp = TextEmbedding.call(
             model=model,
@@ -447,8 +448,9 @@ def test_dashscope_rerank(api_key: str, model: str) -> TestResult:
         return TestResult("DashScope Rerank", Status.FAILED, "Missing API key")
 
     try:
-        from dashscope import TextReRank
         from http import HTTPStatus
+
+        from dashscope import TextReRank
 
         resp = TextReRank.call(
             model=model,

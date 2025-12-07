@@ -1,5 +1,6 @@
 """LLM integration."""
 
+from .cluster_labeler import ClusterLabeler
 from .deepseek import DeepSeekClient
 from .factory import create_llm_client
 from .interest_refiner import InterestRefiner
@@ -12,6 +13,7 @@ from .translator import TitleTranslator
 
 __all__ = [
     "create_llm_client",
+    "ClusterLabeler",
     "DeepSeekClient",
     "KimiClient",
     "OpenRouterClient",

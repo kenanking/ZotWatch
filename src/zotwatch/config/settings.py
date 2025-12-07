@@ -129,9 +129,21 @@ class ScoringConfig(BaseModel):
                 raise ValueError(f"Unsupported rerank provider '{value}'. Allowed: {sorted(allowed)}")
             return value.lower()
 
+    class FusionScoringConfig(BaseModel):
+        """Micro/Macro fusion scoring.
+
+        - Micro: recency-weighted k-NN similarity S_micro
+        - Macro: cluster-size-weighted similarity S_macro = max_k(sim_k * ln(1 + E_k))
+        - Final similarity: similarity = α * S_micro + (1 - α) * S_macro
+        """
+
+        micro_weight: float = 0.65  # α: weight for micro-level score
+        knn_neighbors: int = 5  # L: neighbor count used for micro-level scoring
+
     thresholds: Thresholds = Field(default_factory=Thresholds)
     interests: InterestsConfig = Field(default_factory=InterestsConfig)
     rerank: RerankConfig = Field(default_factory=RerankConfig)
+    fusion: FusionScoringConfig = Field(default_factory=FusionScoringConfig)
 
 
 # Embedding Configuration
@@ -151,6 +163,11 @@ class EmbeddingConfig(BaseModel):
         if value.lower() not in allowed:
             raise ValueError(f"Unsupported embedding provider '{value}'. Allowed: {sorted(allowed)}")
         return value.lower()
+
+    @property
+    def signature(self) -> str:
+        """Return embedding provider and model signature (e.g., 'voyage:voyage-3.5')."""
+        return f"{self.provider}:{self.model}"
 
 
 # LLM Configuration
@@ -209,11 +226,54 @@ class OutputConfig(BaseModel):
 
 
 # Profile Configuration
+
+
+class TemporalConfig(BaseModel):
+    """Temporal weighting configuration for time-decay of paper relevance.
+
+    Uses exponential decay: w = exp(-ln(2) / T_half * age_days)
+    Papers at halflife_days age have weight = 0.5.
+    """
+
+    enabled: bool = True
+    halflife_days: float = 180.0  # T_half: papers half as relevant after this many days
+    min_weight: float = 0.05  # Floor weight to prevent zero weights for very old papers
+
+
+class ClusteringConfig(BaseModel):
+    """Configuration for profile clustering.
+
+    Uses adaptive Silhouette-based clustering with automatic k selection.
+    The optimal cluster count is determined by maximizing Silhouette score
+    within the range [2, min(max_clusters, n_samples // 39)].
+
+    K selection uses biased selection: within tolerance of the best score,
+    prefer the largest k value for finer-grained research domains.
+    """
+
+    enabled: bool = True
+    max_clusters: int = 35  # Upper limit on cluster count
+    min_cluster_size: int = 1  # Minimum papers per valid cluster (1 = allow single-paper clusters)
+    biased_k_tolerance: float = 0.05  # In {k | S_k >= S_max - delta}, select max k
+
+    # Temporal weighting
+    temporal: TemporalConfig = Field(default_factory=TemporalConfig)
+
+    # LLM labeling
+    generate_labels: bool = True  # Use LLM to generate cluster labels
+
+    # K-means algorithm parameters
+    kmeans_iterations: int = 20  # Number of k-means iterations
+    subsample_threshold: int = 5000  # Subsample above this for silhouette search
+    representative_title_count: int = 5  # Number of representative titles per cluster
+
+
 class ProfileConfig(BaseModel):
     """Profile analysis configuration."""
 
-    exclude_keywords: list[str] = Field(default_factory=list)  # Keywords/tags to exclude
+    exclude_tags: list[str] = Field(default_factory=list)  # Tags to drop during ingest
     author_min_count: int = 10  # Minimum appearances for "frequent author"
+    clustering: ClusteringConfig = Field(default_factory=ClusteringConfig)
 
 
 # Watch Pipeline Configuration
@@ -303,5 +363,7 @@ __all__ = [
     "LLMConfig",
     "OutputConfig",
     "ProfileConfig",
+    "ClusteringConfig",
+    "TemporalConfig",
     "WatchPipelineConfig",
 ]

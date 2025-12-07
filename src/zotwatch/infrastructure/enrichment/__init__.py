@@ -2,7 +2,7 @@
 
 from .cache import MetadataCache
 from .llm_extractor import LLMAbstractExtractor
-from .publisher_extractors import PublisherExtractor, extract_abstract, detect_publisher
+from .publisher_extractors import PublisherExtractor, detect_publisher, extract_abstract
 from .publisher_scraper import AbstractScraper
 from .stealth_browser import StealthBrowser
 

@@ -62,22 +62,22 @@ scoring:
   # Rerank settings (only used when interests.enabled=true)
   # Provider MUST match embedding.provider when interests are enabled
   rerank:
-    provider: "voyage"  # Options: "voyage" or "dashscope"
-    model: "rerank-2.5"  # voyage: rerank-2/rerank-2.5, dashscope: qwen3-rerank
+    provider: "dashscope"  # Options: "voyage" or "dashscope"
+    model: "qwen3-rerank"  # voyage: rerank-2/rerank-2.5, dashscope: qwen3-rerank
 
 # Embedding configuration (provider MUST match rerank.provider when interests are enabled)
 embedding:
-  provider: "voyage"  # Options: "voyage" or "dashscope"
-  model: "voyage-3.5"  # voyage: voyage-3.5, dashscope: text-embedding-v4
-  api_key: "${VOYAGE_API_KEY}"  # voyage: VOYAGE_API_KEY, dashscope: DASHSCOPE_API_KEY
-  batch_size: 128  # For DashScope models, must be <=10
+  provider: "dashscope"  # Options: "voyage" or "dashscope"
+  model: "text-embedding-v3"  # voyage: voyage-3.5, dashscope: text-embedding-v3
+  api_key: "${DASHSCOPE_API_KEY}"  # voyage: VOYAGE_API_KEY, dashscope: DASHSCOPE_API_KEY
+  batch_size: 10  # For DashScope models, must be <=10
 
 # LLM configuration for AI summaries and translation
 llm:
   enabled: true
-  provider: "kimi"  # Options: "kimi" or "openrouter"
-  api_key: "${MOONSHOT_API_KEY}"  # kimi: MOONSHOT_API_KEY, openrouter: OPENROUTER_API_KEY
-  model: "kimi-k2-turbo-preview"
+  provider: "deepseek"  # Options: "kimi", "openrouter", or "deepseek"
+  api_key: "${DEEPSEEK_API_KEY}"  # deepseek: DEEPSEEK_API_KEY
+  model: "deepseek-chat"
   max_tokens: 5120
   temperature: 0.3
   retry:
@@ -103,14 +103,32 @@ output:
 
 # Profile analysis configuration
 profile:
-  exclude_keywords:  # Exclude personal markers from statistics
+  exclude_tags:  # Drop these tags during Zotero ingest (personal markers)
     - "⏳"
     - "✔️"
     - "💎"
     - "/done"
     - "/reading"
     - "/unread"
+    - "⭐"
+    - "⭐⭐"
+    - "⭐⭐⭐"
+    - "⭐⭐⭐⭐"
+    - "⭐⭐⭐⭐⭐"
   author_min_count: 10  # Minimum appearances for "frequent author"
+  # Clustering configuration for semantic grouping of research papers
+  # Uses adaptive Silhouette-based clustering with automatic k selection
+  clustering:
+    enabled: true
+    max_clusters: 35               # Upper limit on cluster count
+    min_cluster_size: 1            # Minimum papers per valid cluster (1 = allow single-paper clusters)
+    biased_k_tolerance: 0.05       # In {k | S_k >= S_max - δ}, select max k for finer granularity
+    generate_labels: true          # Use LLM to generate cluster labels
+    # Temporal weighting for time-decay of paper relevance
+    temporal:
+      enabled: true
+      halflife_days: 180           # Papers half as relevant after 6 months
+      min_weight: 0.05             # Floor weight for very old papers
 
 # Watch pipeline configuration
 watch:
