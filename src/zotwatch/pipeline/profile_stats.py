@@ -6,8 +6,6 @@ import logging
 from collections import Counter
 from datetime import datetime, timedelta
 
-from zotwatch.utils.datetime import ensure_aware, utc_now
-
 from zotwatch.core.models import (
     AuthorStats,
     KeywordStats,
@@ -18,6 +16,7 @@ from zotwatch.core.models import (
     YearDistribution,
     ZoteroItem,
 )
+from zotwatch.utils.datetime import ensure_aware, utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -61,14 +60,12 @@ class ProfileStatsExtractor:
     def extract_all(
         self,
         items: list[ZoteroItem],
-        exclude_keywords: list[str] | None = None,
         author_min_count: int = 10,
     ) -> ResearcherProfile:
         """Extract all statistics from library items.
 
         Args:
             items: List of Zotero items to analyze.
-            exclude_keywords: Keywords/tags to exclude from statistics.
             author_min_count: Minimum appearances for "frequent author" count.
 
         Returns:
@@ -93,7 +90,7 @@ class ProfileStatsExtractor:
             year_range=year_range,
             collection_duration=collection_duration,
             frequent_author_count=frequent_author_count,
-            keywords=self._extract_keywords(items, exclude=exclude_keywords),
+            keywords=self._extract_keywords(items),
             authors=self._extract_authors(items),
             venues=self._extract_venues(items),
             quarterly_trends=self._extract_quarterly_trends(items),
@@ -107,19 +104,16 @@ class ProfileStatsExtractor:
         self,
         items: list[ZoteroItem],
         top_n: int = 50,
-        exclude: list[str] | None = None,
     ) -> list[KeywordStats]:
         """Extract keyword frequency from tags.
 
         Args:
             items: Zotero items to analyze.
             top_n: Maximum number of keywords to return.
-            exclude: List of keywords/tags to exclude from statistics.
 
         Returns:
             List of keyword statistics sorted by frequency.
         """
-        exclude_set = set(exclude or [])
         tag_counter: Counter[str] = Counter()
 
         for item in items:
@@ -128,9 +122,7 @@ class ProfileStatsExtractor:
                 if tag and len(tag.strip()) > 1:
                     # Normalize: strip whitespace, keep original case for display
                     normalized = tag.strip()
-                    # Skip excluded tags
-                    if normalized not in exclude_set:
-                        tag_counter[normalized] += 1
+                    tag_counter[normalized] += 1
 
         return [KeywordStats(keyword=kw, count=cnt, source="tag") for kw, cnt in tag_counter.most_common(top_n)]
 

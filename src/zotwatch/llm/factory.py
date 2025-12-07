@@ -7,11 +7,12 @@ eliminating duplicate creation code throughout the codebase.
 from zotwatch.config.settings import LLMConfig
 from zotwatch.core.exceptions import ConfigurationError
 from zotwatch.llm.base import BaseLLMProvider
+from zotwatch.llm.deepseek import DeepSeekClient
 from zotwatch.llm.kimi import KimiClient
 from zotwatch.llm.openrouter import OpenRouterClient
 
 # Supported providers
-SUPPORTED_PROVIDERS = frozenset({"openrouter", "kimi"})
+SUPPORTED_PROVIDERS = frozenset({"openrouter", "kimi", "deepseek"})
 
 
 def create_llm_client(config: LLMConfig) -> BaseLLMProvider:
@@ -32,6 +33,8 @@ def create_llm_client(config: LLMConfig) -> BaseLLMProvider:
         return KimiClient.from_config(config)
     elif provider == "openrouter":
         return OpenRouterClient.from_config(config)
+    elif provider == "deepseek":
+        return DeepSeekClient.from_config(config)
     else:
         raise ConfigurationError(
             f"Unknown LLM provider: {config.provider}. Supported providers: {', '.join(sorted(SUPPORTED_PROVIDERS))}"

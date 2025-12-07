@@ -3,13 +3,10 @@
 import logging
 from pathlib import Path
 
-import numpy as np
-
 from zotwatch.config.settings import Settings
 from zotwatch.core.models import CandidateWork, InterestWork
 from zotwatch.infrastructure.embedding import FaissIndex
-from zotwatch.infrastructure.embedding.base import BaseReranker
-from zotwatch.infrastructure.embedding.base import BaseEmbeddingProvider
+from zotwatch.infrastructure.embedding.base import BaseEmbeddingProvider, BaseReranker
 from zotwatch.llm import InterestRefiner
 from zotwatch.pipeline.journal_scorer import JournalScorer
 
@@ -49,9 +46,9 @@ class InterestRanker:
         Pipeline:
         1. Refine user interests using LLM
         2. Filter by exclude keywords
-        3. Encode query and build temporary FAISS index
-        4. FAISS recall top-K candidates
-        5. Rerank using Voyage API
+        3. Encode query (with input_type="query" for Voyage) and candidates
+        4. FAISS recall max_documents candidates (capped at reranker limit)
+        5. Rerank using reranker API (single batch)
         6. Return top interest-based papers
 
         Args:
@@ -88,45 +85,47 @@ class InterestRanker:
             return []
 
         # Step 3: Encode query and candidates
+        # Use encode_query() for the refined query (uses input_type="query" for Voyage)
         logger.info("Encoding query and %d candidates...", len(filtered))
-        query_vec = self.vectorizer.encode([refined.refined_query])
+        query_vec = self.vectorizer.encode_query([refined.refined_query])
         candidate_texts = [c.content_for_embedding() for c in filtered]
         candidate_vecs = self.vectorizer.encode(candidate_texts)
 
-        # Step 4: FAISS recall or use all candidates
-        # When top_k_recall == -1, skip FAISS and use all candidates directly
-        if interests_config.top_k_recall == -1:
-            logger.info("top_k_recall=-1, skipping FAISS recall, using all %d candidates", len(filtered))
-            recalled = filtered
-            similarities = {}
-            # Compute cosine similarities for all candidates
-            query_norm = query_vec / np.linalg.norm(query_vec, axis=1, keepdims=True)
-            candidate_norms = candidate_vecs / np.linalg.norm(candidate_vecs, axis=1, keepdims=True)
-            sim_scores = np.dot(query_norm, candidate_norms.T)[0]
-            for i, c in enumerate(filtered):
-                similarities[c.identifier] = float(sim_scores[i])
-        else:
-            # Build temporary FAISS index and recall top-K
-            temp_index, _ = FaissIndex.from_vectors(candidate_vecs.astype("float32"))
-            top_k_recall = min(interests_config.top_k_recall, len(filtered))
+        # Step 4: FAISS recall to limit candidates for reranking
+        # Validate and cap max_documents to not exceed reranker API limit
+        max_docs = interests_config.max_documents
+        if max_docs > self.reranker.max_documents:
+            logger.warning(
+                "max_documents (%d) exceeds reranker limit (%d), capping to %d",
+                max_docs,
+                self.reranker.max_documents,
+                self.reranker.max_documents,
+            )
+            max_docs = self.reranker.max_documents
 
-            distances, indices = temp_index.search(query_vec, top_k=top_k_recall)
+        # Build temporary FAISS index and recall top-K
+        temp_index, _ = FaissIndex.from_vectors(candidate_vecs.astype("float32"))
+        recall_count = min(max_docs, len(filtered))
 
-            # Get recalled candidates with their similarity scores
-            recalled = []
-            similarities = {}
-            for i, (idx, dist) in enumerate(zip(indices[0], distances[0])):
-                if idx < len(filtered):
-                    recalled.append(filtered[idx])
-                    similarities[filtered[idx].identifier] = float(dist)
+        distances, indices = temp_index.search(query_vec, top_k=recall_count)
 
-            logger.info("FAISS recalled %d candidates", len(recalled))
+        # Get recalled candidates with their similarity scores
+        recalled = []
+        similarities = {}
+        for i, (idx, dist) in enumerate(zip(indices[0], distances[0])):
+            if idx < len(filtered):
+                recalled.append(filtered[idx])
+                similarities[filtered[idx].identifier] = float(dist)
+
+        logger.info("FAISS recalled %d candidates (max_documents=%d)", len(recalled), max_docs)
 
         if not recalled:
             return []
 
-        # Step 5: Rerank using Voyage API
-        logger.info("Reranking with Voyage API...")
+        # Step 5: Rerank using configured provider
+        provider = self.settings.scoring.rerank.provider
+        model = getattr(self.reranker, "model", "n/a")
+        logger.info(f"Reranking with {provider.capitalize()} API (model: {model})...")
         documents = [f"{c.title}\n{c.abstract or ''}" for c in recalled]
         top_k_interest = min(interests_config.top_k_interest, len(recalled))
 

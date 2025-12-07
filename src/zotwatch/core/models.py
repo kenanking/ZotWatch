@@ -27,22 +27,29 @@ class ZoteroItem(BaseModel):
 
     def content_for_embedding(self) -> str:
         """Generate text content for embedding."""
-        parts = [self.title]
-        if self.abstract:
-            parts.append(self.abstract)
-        if self.creators:
-            parts.append("; ".join(self.creators))
-        if self.tags:
-            parts.append("; ".join(self.tags))
-        return "\n".join(filter(None, parts))
+        abstract = self.abstract or ""
+        return f"Title: {self.title}\nAbstract: {abstract}"
 
     @classmethod
-    def from_zotero_api(cls, item: dict[str, object]) -> "ZoteroItem":
+    def from_zotero_api(cls, item: dict[str, object], exclude_tags: list[str] | None = None) -> "ZoteroItem":
         """Parse item from Zotero API response."""
         data = item.get("data", {})
+
+        exclude_set = {t.strip() for t in (exclude_tags or []) if t and t.strip()}
         creators = [
             " ".join(filter(None, [c.get("firstName"), c.get("lastName")])).strip() for c in data.get("creators", [])
         ]
+        tags: list[str] = []
+        for t in data.get("tags", []):
+            if not isinstance(t, dict):
+                continue
+            tag_value = t.get("tag")
+            if not tag_value:
+                continue
+            normalized = tag_value.strip()
+            if normalized and normalized in exclude_set:
+                continue
+            tags.append(tag_value)
 
         # Parse dateAdded (format: "2024-01-15T10:30:00Z")
         date_added = None
@@ -58,7 +65,7 @@ class ZoteroItem(BaseModel):
             title=data.get("title") or "",
             abstract=data.get("abstractNote"),
             creators=[c for c in creators if c],
-            tags=[t.get("tag") for t in data.get("tags", []) if isinstance(t, dict)],
+            tags=tags,
             collections=data.get("collections", []),
             year=_safe_int(data.get("date")),
             doi=data.get("DOI"),
@@ -95,12 +102,8 @@ class CandidateWork(BaseModel):
 
     def content_for_embedding(self) -> str:
         """Generate text content for embedding."""
-        parts = [self.title]
-        if self.abstract:
-            parts.append(self.abstract)
-        if self.authors:
-            parts.append("; ".join(self.authors))
-        return "\n".join(filter(None, parts))
+        abstract = self.abstract or ""
+        return f"Title: {self.title}\nAbstract: {abstract}"
 
 
 class RankedWork(CandidateWork):
@@ -114,6 +117,11 @@ class RankedWork(CandidateWork):
     label: str  # must_read/consider/ignore
     summary: "PaperSummary | None" = None
     translated_title: str | None = None  # Translated title for display
+
+    # Hybrid scoring details (for debugging/visualization)
+    micro_score: float | None = None  # S_micro: k-NN based score
+    macro_score: float | None = None  # S_macro: cluster based score
+    matched_cluster_id: int | None = None  # Best matching cluster ID
 
 
 class InterestWork(RankedWork):
@@ -267,6 +275,47 @@ class ResearcherProfileInsights(BaseModel):
     recommendations: str  # Suggested directions
 
 
+# Clustering Models
+
+
+class ClusterInfo(BaseModel):
+    """Information about a single semantic cluster."""
+
+    cluster_id: int
+    centroid: list[float]  # 1024-dim embedding vector
+    member_count: int
+    member_keys: list[str] = Field(default_factory=list)  # ZoteroItem keys
+    representative_titles: list[str] = Field(default_factory=list)  # Top titles closest to centroid
+    keywords: list[str] = Field(default_factory=list)  # Top tags from members
+    label: str | None = None  # LLM-generated cluster label
+    coherence_score: float = 0.0  # Intra-cluster similarity (0-1)
+
+    # Temporal-weighted fields
+    weighted_centroid: list[float] | None = None  # μ_k: time-weighted centroid
+    effective_size: float = 0.0  # E_k = Σw_i (sum of temporal weights)
+    mean_item_age_days: float = 0.0  # Average age of members in days
+    temporal_span_days: int = 0  # max(age) - min(age) in days
+    recent_ratio: float = 0.0  # Fraction of items added in last 90 days
+
+
+class ClusteredProfile(BaseModel):
+    """Cluster-based profile representation."""
+
+    clusters: list[ClusterInfo] = Field(default_factory=list)
+    valid_cluster_count: int = 0  # Clusters meeting min_size threshold
+    min_cluster_size_used: int = 5
+    total_papers: int = 0
+    papers_in_valid_clusters: int = 0
+    clustering_method: str = "kmeans"
+    embedding_signature: str | None = None  # To detect provider/model changes
+    generated_at: datetime = Field(default_factory=utc_now)
+
+    # Temporal metadata
+    temporal_config_used: dict | None = None  # Serialized TemporalConfig
+    profile_date_range: tuple[str, str] | None = None  # (min_date, max_date) ISO format
+    total_effective_size: float = 0.0  # Σ E_k across all clusters
+
+
 class ResearcherProfile(BaseModel):
     """Complete researcher profile analysis."""
 
@@ -289,6 +338,9 @@ class ResearcherProfile(BaseModel):
 
     # LLM insights
     insights: ResearcherProfileInsights | None = None
+
+    # Clustering
+    clustered_profile: ClusteredProfile | None = None
 
     # Metadata
     generated_at: datetime = Field(default_factory=utc_now)
@@ -318,4 +370,7 @@ __all__ = [
     "RecentPapersAnalysis",
     "ResearcherProfileInsights",
     "ResearcherProfile",
+    # Clustering Models
+    "ClusterInfo",
+    "ClusteredProfile",
 ]

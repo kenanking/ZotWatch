@@ -140,7 +140,16 @@ class ZoteroIngestor:
             response_version = int(response.headers.get("Last-Modified-Version", 0))
             max_version = max(max_version, response_version)
             for raw_item in items:
-                zot_item = ZoteroItem.from_zotero_api(raw_item)
+                # Skip non-bibliographic items (attachments, annotations, notes)
+                data = raw_item.get("data", {})
+                item_type = data.get("itemType", "")
+                if item_type in ("attachment", "annotation", "note"):
+                    continue
+
+                zot_item = ZoteroItem.from_zotero_api(
+                    raw_item,
+                    exclude_tags=self.settings.profile.exclude_tags,
+                )
                 content_hash = hash_content(
                     zot_item.title,
                     zot_item.abstract or "",

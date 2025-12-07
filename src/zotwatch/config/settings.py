@@ -106,7 +106,7 @@ class ScoringConfig(BaseModel):
 
         enabled: bool = False
         description: str = ""  # Natural language interest description
-        top_k_recall: int = 50  # FAISS recall count, -1 to skip FAISS and use all candidates
+        max_documents: int = 500  # Max documents for FAISS recall (must not exceed rerank API limit)
         top_k_interest: int = 5  # Final interest-based papers count
 
     class RerankConfig(BaseModel):
@@ -114,6 +114,8 @@ class ScoringConfig(BaseModel):
 
         Note: Rerank is only used when interests.enabled=true.
         Provider must match embedding.provider when interests are enabled.
+        Ensure interests.max_documents does not exceed the API limit
+        (Voyage: 1000, DashScope: 500).
         """
 
         provider: str = "voyage"  # "voyage" or "dashscope"
@@ -127,9 +129,21 @@ class ScoringConfig(BaseModel):
                 raise ValueError(f"Unsupported rerank provider '{value}'. Allowed: {sorted(allowed)}")
             return value.lower()
 
+    class FusionScoringConfig(BaseModel):
+        """Micro/Macro fusion scoring.
+
+        - Micro: recency-weighted k-NN similarity S_micro
+        - Macro: cluster-size-weighted similarity S_macro = max_k(sim_k * ln(1 + E_k))
+        - Final similarity: similarity = α * S_micro + (1 - α) * S_macro
+        """
+
+        micro_weight: float = 0.65  # α: weight for micro-level score
+        knn_neighbors: int = 5  # L: neighbor count used for micro-level scoring
+
     thresholds: Thresholds = Field(default_factory=Thresholds)
     interests: InterestsConfig = Field(default_factory=InterestsConfig)
     rerank: RerankConfig = Field(default_factory=RerankConfig)
+    fusion: FusionScoringConfig = Field(default_factory=FusionScoringConfig)
 
 
 # Embedding Configuration
@@ -149,6 +163,11 @@ class EmbeddingConfig(BaseModel):
         if value.lower() not in allowed:
             raise ValueError(f"Unsupported embedding provider '{value}'. Allowed: {sorted(allowed)}")
         return value.lower()
+
+    @property
+    def signature(self) -> str:
+        """Return embedding provider and model signature (e.g., 'voyage:voyage-3.5')."""
+        return f"{self.provider}:{self.model}"
 
 
 # LLM Configuration
@@ -207,11 +226,62 @@ class OutputConfig(BaseModel):
 
 
 # Profile Configuration
+
+
+class TemporalConfig(BaseModel):
+    """Temporal weighting configuration for time-decay of paper relevance.
+
+    Uses exponential decay: w = exp(-ln(2) / T_half * age_days)
+    Papers at halflife_days age have weight = 0.5.
+    """
+
+    enabled: bool = True
+    halflife_days: float = 180.0  # T_half: papers half as relevant after this many days
+    min_weight: float = 0.05  # Floor weight to prevent zero weights for very old papers
+
+
+class ClusteringConfig(BaseModel):
+    """Configuration for profile clustering.
+
+    Uses adaptive Silhouette-based clustering with automatic k selection.
+    The optimal cluster count is determined by maximizing Silhouette score
+    within the range [2, min(max_clusters, n_samples // 39)].
+
+    K selection uses biased selection: within tolerance of the best score,
+    prefer the largest k value for finer-grained research domains. Tolerance
+    is expressed as a percentage of the best Silhouette score.
+    """
+
+    enabled: bool = True
+    max_clusters: int = 35  # Upper limit on cluster count
+    min_cluster_size: int = 1  # Minimum papers per valid cluster (1 = allow single-paper clusters)
+    biased_k_tolerance_percent: float = 0.10  # Relative tolerance: within (1 - pct) of best Silhouette, select max k
+
+    # Temporal weighting
+    temporal: TemporalConfig = Field(default_factory=TemporalConfig)
+
+    # LLM labeling
+    generate_labels: bool = True  # Use LLM to generate cluster labels
+
+    # K-means algorithm parameters
+    kmeans_iterations: int = 20  # Number of k-means iterations
+    subsample_threshold: int = 5000  # Subsample above this for silhouette search
+    representative_title_count: int = 5  # Number of representative titles per cluster
+
+    @field_validator("biased_k_tolerance_percent")
+    @classmethod
+    def validate_biased_k_tolerance_percent(cls, value: float) -> float:
+        if not 0 <= value <= 1:
+            raise ValueError("biased_k_tolerance_percent must be between 0 and 1 (representing a percentage)")
+        return value
+
+
 class ProfileConfig(BaseModel):
     """Profile analysis configuration."""
 
-    exclude_keywords: list[str] = Field(default_factory=list)  # Keywords/tags to exclude
+    exclude_tags: list[str] = Field(default_factory=list)  # Tags to drop during ingest
     author_min_count: int = 10  # Minimum appearances for "frequent author"
+    clustering: ClusteringConfig = Field(default_factory=ClusteringConfig)
 
 
 # Watch Pipeline Configuration
@@ -240,8 +310,8 @@ class Settings(BaseModel):
     profile: ProfileConfig = Field(default_factory=ProfileConfig)
     watch: WatchPipelineConfig = Field(default_factory=WatchPipelineConfig)
 
-    @model_validator(mode='after')
-    def validate_embedding_rerank_coupling(self) -> 'Settings':
+    @model_validator(mode="after")
+    def validate_embedding_rerank_coupling(self) -> "Settings":
         """Ensure embedding and rerank use the same provider when interests are enabled.
 
         This constraint is only enforced when interests.enabled=true because:
@@ -258,10 +328,10 @@ class Settings(BaseModel):
                     f"Update config.yaml to use the same provider for both.\n\n"
                     f"Example:\n"
                     f"  embedding:\n"
-                    f"    provider: \"{self.embedding.provider}\"\n"
+                    f'    provider: "{self.embedding.provider}"\n'
                     f"  scoring:\n"
                     f"    rerank:\n"
-                    f"      provider: \"{self.embedding.provider}\"\n\n"
+                    f'      provider: "{self.embedding.provider}"\n\n'
                     f"Alternatively, set scoring.interests.enabled=false if you don't need "
                     f"interest-based recommendations."
                 )
@@ -301,5 +371,7 @@ __all__ = [
     "LLMConfig",
     "OutputConfig",
     "ProfileConfig",
+    "ClusteringConfig",
+    "TemporalConfig",
     "WatchPipelineConfig",
 ]

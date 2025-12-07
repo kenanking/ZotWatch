@@ -52,11 +52,12 @@ scoring:
     description: |
       我现在重点关注下面的研究方向：
       1) 国土资源管理领域的土地利用分类、地表覆盖分类，并以此为基础的图像分类
-      2) 多实例学习相关领域
-      3) 视觉基础模型预训练（例如：CLIP、MAE、DINO、JEPA 等相关方法）
-      4) 大语言模型的最新进展
-      5) 希望排除生物医学领域的研究
-    top_k_recall: -1  # FAISS recall count, -1 to skip FAISS and use all candidates
+      2) 街景数据分析，比如：街景场景理解、分类
+      3) 多实例学习相关领域
+      4) 视觉基础模型预训练（例如：CLIP、MAE、DINO、JEPA 等相关方法）
+      5) 大语言模型的最新进展
+      6) 希望排除生物医学领域的研究
+    max_documents: 500  # Max documents for FAISS recall (Voyage limit: 1000, DashScope: 500)
     top_k_interest: 5  # Final interest-based papers count
 
   # Rerank settings (only used when interests.enabled=true)
@@ -68,15 +69,15 @@ scoring:
 # Embedding configuration (provider MUST match rerank.provider when interests are enabled)
 embedding:
   provider: "voyage"  # Options: "voyage" or "dashscope"
-  model: "voyage-3.5"  # voyage: voyage-3.5, dashscope: text-embedding-v4
+  model: "voyage-3.5"  # voyage: voyage-3.5, dashscope: text-embedding-v3
   api_key: "${VOYAGE_API_KEY}"  # voyage: VOYAGE_API_KEY, dashscope: DASHSCOPE_API_KEY
-  batch_size: 128
+  batch_size: 128  # For DashScope models, must be <=10
 
 # LLM configuration for AI summaries and translation
 llm:
   enabled: true
-  provider: "kimi"  # Options: "kimi" or "openrouter"
-  api_key: "${MOONSHOT_API_KEY}"  # kimi: MOONSHOT_API_KEY, openrouter: OPENROUTER_API_KEY
+  provider: "kimi"  # Options: "kimi", "openrouter", or "deepseek"
+  api_key: "${MOONSHOT_API_KEY}"  # kimi: MOONSHOT_API_KEY
   model: "kimi-k2-turbo-preview"
   max_tokens: 5120
   temperature: 0.3
@@ -103,14 +104,32 @@ output:
 
 # Profile analysis configuration
 profile:
-  exclude_keywords:  # Exclude personal markers from statistics
+  exclude_tags:  # Drop these tags during Zotero ingest (personal markers)
     - "⏳"
     - "✔️"
     - "💎"
     - "/done"
     - "/reading"
     - "/unread"
+    - "⭐"
+    - "⭐⭐"
+    - "⭐⭐⭐"
+    - "⭐⭐⭐⭐"
+    - "⭐⭐⭐⭐⭐"
   author_min_count: 10  # Minimum appearances for "frequent author"
+  # Clustering configuration for semantic grouping of research papers
+  # Uses adaptive Silhouette-based clustering with automatic k selection
+  clustering:
+    enabled: true
+    max_clusters: 35               # Upper limit on cluster count
+    min_cluster_size: 1            # Minimum papers per valid cluster (1 = allow single-paper clusters)
+    biased_k_tolerance_percent: 0.10  # Within 10% of best Silhouette score, select the largest k
+    generate_labels: true          # Use LLM to generate cluster labels
+    # Temporal weighting for time-decay of paper relevance
+    temporal:
+      enabled: true
+      halflife_days: 180           # Papers half as relevant after 6 months
+      min_weight: 0.05             # Floor weight for very old papers
 
 # Watch pipeline configuration
 watch:

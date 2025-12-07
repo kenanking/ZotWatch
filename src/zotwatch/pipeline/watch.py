@@ -10,7 +10,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from zotwatch.config.settings import Settings
-from zotwatch.core.models import CandidateWork, InterestWork, OverallSummary, RankedWork, ResearcherProfile
+from zotwatch.core.models import (
+    CandidateWork,
+    ClusteredProfile,
+    InterestWork,
+    OverallSummary,
+    RankedWork,
+    ResearcherProfile,
+)
 from zotwatch.infrastructure.embedding import (
     CachingEmbeddingProvider,
     EmbeddingCache,
@@ -29,10 +36,10 @@ from zotwatch.llm import (
 from zotwatch.llm.base import BaseLLMProvider
 from zotwatch.llm.factory import create_llm_client
 from zotwatch.pipeline import DedupeEngine, InterestRanker, ProfileBuilder, ProfileRanker, ProfileStatsExtractor
-from zotwatch.pipeline.profile_ranker import ComputedThresholds
 from zotwatch.pipeline.enrich import AbstractEnricher, EnrichmentStats
 from zotwatch.pipeline.fetch import CandidateFetcher
 from zotwatch.pipeline.filters import filter_recent, filter_without_abstract, limit_preprints
+from zotwatch.pipeline.profile_ranker import ComputedThresholds
 from zotwatch.sources.zotero import ZoteroIngestor
 
 logger = logging.getLogger(__name__)
@@ -146,7 +153,7 @@ class WatchPipeline:
     ) -> bool:
         """Check if profile exists, return True if it was built."""
         storage = self._get_storage()
-        current_signature = f"{self.settings.embedding.provider}:{self.settings.embedding.model}"
+        current_signature = self.settings.embedding.signature
         stored_signature = storage.get_metadata("embedding_signature")
         faiss_path = self.base_dir / "data" / "faiss.index"
         sqlite_path = self.base_dir / "data" / "profile.sqlite"
@@ -334,14 +341,27 @@ class WatchPipeline:
         cached_profile = storage.get_profile_analysis(current_hash)
 
         if cached_profile:
-            progress("profile", "Using cached profile analysis")
-            return cached_profile
+            # Check if LLM model changed - need to regenerate AI insights
+            # Only regenerate if LLM is enabled and model differs from cached
+            current_model = self.settings.llm.model if self.settings.llm.enabled else None
+            should_regenerate = self.settings.llm.enabled and cached_profile.model_used != current_model
+            if not should_regenerate:
+                progress("profile", "Using cached profile analysis")
+                # Still need to load clustered profile even with cached base profile
+                self._load_clustered_profile(cached_profile, storage, progress)
+                return cached_profile
+            else:
+                logger.info(
+                    "LLM model changed (%s -> %s), regenerating AI insights",
+                    cached_profile.model_used,
+                    current_model,
+                )
+                progress("profile", "LLM model changed, regenerating AI insights...")
 
         # Extract statistics
         progress("profile", "Extracting library statistics...")
         profile = stats_extractor.extract_all(
             all_items,
-            exclude_keywords=self.settings.profile.exclude_keywords,
             author_min_count=self.settings.profile.author_min_count,
         )
 
@@ -361,7 +381,64 @@ class WatchPipeline:
                 logger.warning("Failed to generate profile insights: %s", e)
                 progress("profile", f"AI insights skipped (error: {e})")
 
+        # Load clustered profile if available
+        self._load_clustered_profile(profile, storage, progress)
+
         return profile
+
+    def _load_clustered_profile(
+        self,
+        profile: ResearcherProfile,
+        storage: ProfileStorage,
+        progress: Callable[[str, str], None],
+    ) -> None:
+        """Load clustered profile and optionally generate LLM labels."""
+        if not self.settings.profile.clustering.enabled:
+            return
+
+        embedding_signature = self.settings.embedding.signature
+        clustered = storage.get_clustered_profile(embedding_signature)
+
+        if not clustered or clustered.valid_cluster_count == 0:
+            return
+
+        # Generate LLM labels for clusters if enabled
+        llm_client = self._get_llm_client()
+        if self.settings.profile.clustering.generate_labels and llm_client:
+            try:
+                self._label_clusters(clustered, llm_client, progress)
+                # Update cached clustered profile with labels
+                storage.save_clustered_profile(clustered)
+            except Exception as e:
+                logger.warning("Failed to generate cluster labels: %s", e)
+
+        profile.clustered_profile = clustered
+        progress(
+            "profile",
+            f"Loaded {clustered.valid_cluster_count} research clusters",
+        )
+
+    def _label_clusters(
+        self,
+        clustered: ClusteredProfile,
+        llm_client: BaseLLMProvider,
+        progress: Callable[[str, str], None],
+    ) -> None:
+        """Generate LLM labels for clusters."""
+        from zotwatch.llm.cluster_labeler import ClusterLabeler
+
+        # Only label clusters that don't have labels yet
+        unlabeled = [c for c in clustered.clusters if not c.label]
+        if not unlabeled:
+            return
+
+        progress("profile", f"Generating labels for {len(unlabeled)} clusters...")
+        labeler = ClusterLabeler(llm_client, model=self.settings.llm.model)
+
+        # Use batch labeling for efficiency
+        labels = labeler.label_clusters_batch(unlabeled)
+        for cluster, label in zip(unlabeled, labels):
+            cluster.label = label
 
     def _enrich_abstracts(
         self,

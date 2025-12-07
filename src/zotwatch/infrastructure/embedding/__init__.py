@@ -1,6 +1,6 @@
 """Embedding providers and caching infrastructure."""
 
-from .base import BaseEmbeddingProvider, BaseReranker, RerankResult
+from .base import BaseEmbeddingProvider, BaseReranker
 from .cache import EmbeddingCache
 from .cached import CachingEmbeddingProvider
 from .dashscope import DashScopeEmbedding, DashScopeReranker
@@ -17,7 +17,6 @@ __all__ = [
     # Base classes
     "BaseEmbeddingProvider",
     "BaseReranker",
-    "RerankResult",
     "CachingEmbeddingProvider",
     "EmbeddingCache",
     "FaissIndex",

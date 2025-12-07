@@ -21,8 +21,10 @@ jobs:
       ZOTERO_API_KEY: ${{ secrets.ZOTERO_API_KEY }}
       ZOTERO_USER_ID: ${{ secrets.ZOTERO_USER_ID }}
       VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
+      DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
       MOONSHOT_API_KEY: ${{ secrets.MOONSHOT_API_KEY }}
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
       CROSSREF_MAILTO: ${{ secrets.CROSSREF_MAILTO }}
       # Deploy settings - CHANGE THESE TO YOUR VALUES
       GIT_USER_NAME: 'Duan Yu'
@@ -52,8 +54,9 @@ jobs:
             data/faiss.index
             data/embeddings.sqlite
             data/metadata.sqlite
-          key: zotwatch-${{ hashFiles('config/config.yaml') }}
+          key: zotwatch-${{ hashFiles('config/config.yaml') }}-${{ github.run_number }}
           restore-keys: |
+            zotwatch-${{ hashFiles('config/config.yaml') }}-
             zotwatch-
 
       # Cache Camoufox browser

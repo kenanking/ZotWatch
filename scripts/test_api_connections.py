@@ -12,8 +12,21 @@ import os
 import sys
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 
 import requests
+
+# Add dotenv support for local testing
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ImportError:
+    pass
+
+# Import ZotWatch config loader
+from zotwatch.config.settings import Settings, load_settings
+from zotwatch.core.exceptions import ConfigurationError
 
 
 class Status(Enum):
@@ -29,15 +42,8 @@ class TestResult:
     message: str
 
 
-# Environment variable definitions
-ENV_VARS = {
-    "ZOTERO_API_KEY": {"required": True, "description": "Zotero API key"},
-    "ZOTERO_USER_ID": {"required": True, "description": "Zotero user ID"},
-    "VOYAGE_API_KEY": {"required": True, "description": "Voyage AI API key"},
-    "CROSSREF_MAILTO": {"required": False, "description": "Crossref polite pool email"},
-    "OPENROUTER_API_KEY": {"required": False, "description": "OpenRouter API key"},
-    "MOONSHOT_API_KEY": {"required": False, "description": "Kimi (Moonshot) API key"},
-}
+# Environment variables are now detected dynamically based on config.yaml
+# See detect_required_env_vars() function below
 
 
 def print_header():
@@ -65,12 +71,164 @@ def format_status(status: Status, message: str) -> str:
     return f"{icons[status]} {message}"
 
 
-def check_env_vars() -> dict[str, bool]:
-    """Check which environment variables are set."""
+def load_config() -> Settings | None:
+    """Load ZotWatch configuration.
+
+    Returns:
+        Settings object if config exists, None otherwise.
+    """
+    try:
+        # Try to load from current directory
+        base_dir = Path.cwd()
+        config_path = base_dir / "config" / "config.yaml"
+
+        if not config_path.exists():
+            print_section("Configuration Loading")
+            print("  ⚠️  Warning: config/config.yaml not found")
+            print("  Falling back to basic API tests (Voyage + Zotero)")
+            print()
+            return None
+
+        settings = load_settings(base_dir)
+        return settings
+
+    except ConfigurationError as e:
+        print_section("Configuration Error")
+        print(f"  ❌ Error loading config: {e}")
+        print("  Please fix config.yaml before running tests")
+        sys.exit(1)
+
+    except Exception as e:
+        print_section("Configuration Loading")
+        print(f"  ⚠️  Warning: Failed to load config: {e}")
+        print("  Falling back to basic API tests")
+        print()
+        return None
+
+
+def detect_required_env_vars(settings: Settings | None) -> dict[str, dict]:
+    """Detect required environment variables based on configuration.
+
+    Args:
+        settings: Loaded settings or None for fallback mode.
+
+    Returns:
+        Dict mapping env var names to their config (required, description, reason).
+    """
+    env_vars = {}
+
+    # Zotero is always required
+    env_vars["ZOTERO_API_KEY"] = {
+        "required": True,
+        "description": "Zotero API key",
+        "reason": "Required for all ZotWatch operations",
+    }
+    env_vars["ZOTERO_USER_ID"] = {
+        "required": True,
+        "description": "Zotero user ID",
+        "reason": "Required for all ZotWatch operations",
+    }
+
+    if settings is None:
+        # Fallback mode: assume Voyage (default provider)
+        env_vars["VOYAGE_API_KEY"] = {
+            "required": True,
+            "description": "Voyage AI API key",
+            "reason": "Default embedding provider (config not loaded)",
+        }
+        env_vars["MOONSHOT_API_KEY"] = {
+            "required": False,
+            "description": "Kimi (Moonshot) API key",
+            "reason": "LLM provider (status unknown, config not loaded)",
+        }
+        env_vars["OPENROUTER_API_KEY"] = {
+            "required": False,
+            "description": "OpenRouter API key",
+            "reason": "LLM provider (status unknown, config not loaded)",
+        }
+        env_vars["DEEPSEEK_API_KEY"] = {
+            "required": False,
+            "description": "DeepSeek API key",
+            "reason": "LLM provider (status unknown, config not loaded)",
+        }
+    else:
+        # Config-aware mode: detect based on settings
+
+        # Embedding provider
+        if settings.embedding.provider == "voyage":
+            env_vars["VOYAGE_API_KEY"] = {
+                "required": True,
+                "description": "Voyage AI API key",
+                "reason": f"Configured embedding provider: {settings.embedding.model}",
+            }
+        elif settings.embedding.provider == "dashscope":
+            env_vars["DASHSCOPE_API_KEY"] = {
+                "required": True,
+                "description": "DashScope API key",
+                "reason": f"Configured embedding provider: {settings.embedding.model}",
+            }
+
+        # LLM provider (only if enabled)
+        if settings.llm.enabled:
+            if settings.llm.provider == "kimi":
+                env_vars["MOONSHOT_API_KEY"] = {
+                    "required": True,
+                    "description": "Kimi (Moonshot) API key",
+                    "reason": f"Configured LLM provider: {settings.llm.model}",
+                }
+            elif settings.llm.provider == "openrouter":
+                env_vars["OPENROUTER_API_KEY"] = {
+                    "required": True,
+                    "description": "OpenRouter API key",
+                    "reason": f"Configured LLM provider: {settings.llm.model}",
+                }
+            elif settings.llm.provider == "deepseek":
+                env_vars["DEEPSEEK_API_KEY"] = {
+                    "required": True,
+                    "description": "DeepSeek API key",
+                    "reason": f"Configured LLM provider: {settings.llm.model}",
+                }
+        else:
+            # LLM disabled - add as optional for informational purposes
+            env_vars["MOONSHOT_API_KEY"] = {
+                "required": False,
+                "description": "Kimi API key",
+                "reason": "LLM disabled in config (llm.enabled=false)",
+            }
+            env_vars["OPENROUTER_API_KEY"] = {
+                "required": False,
+                "description": "OpenRouter API key",
+                "reason": "LLM disabled in config (llm.enabled=false)",
+            }
+            env_vars["DEEPSEEK_API_KEY"] = {
+                "required": False,
+                "description": "DeepSeek API key",
+                "reason": "LLM disabled in config (llm.enabled=false)",
+            }
+
+    # Crossref mailto (always optional but recommended)
+    env_vars["CROSSREF_MAILTO"] = {
+        "required": False,
+        "description": "Crossref polite pool email",
+        "reason": "Optional but recommended for faster Crossref API access",
+    }
+
+    return env_vars
+
+
+def check_env_vars(env_vars: dict[str, dict]) -> dict[str, bool]:
+    """Check which environment variables are set.
+
+    Args:
+        env_vars: Dictionary of environment variable configurations.
+
+    Returns:
+        Dict mapping var names to whether they are set.
+    """
     print_section("Environment Variables")
 
     results = {}
-    for var_name, config in ENV_VARS.items():
+    for var_name, config in env_vars.items():
         value = os.environ.get(var_name)
         is_set = bool(value and value.strip())
         results[var_name] = is_set
@@ -79,11 +237,16 @@ def check_env_vars() -> dict[str, bool]:
         if is_set:
             # Mask the value for security
             masked = value[:4] + "..." + value[-4:] if len(value) > 10 else "***"
-            print(f"  {var_name:22} \u2705 Set [{masked}] {required_tag}")
+            print(f"  {var_name:22} ✅ Set [{masked}] {required_tag}")
+            # Show reason if provided
+            if config.get("reason"):
+                print(f"  {'':22}    → {config['reason']}")
         else:
-            icon = "\u274c" if config["required"] else "\u26a0\ufe0f"
-            status = "Not set" if config["required"] else "Not set"
+            icon = "❌" if config["required"] else "⚠️"
+            status = "Not set"
             print(f"  {var_name:22} {icon} {status} {required_tag}")
+            if config.get("reason"):
+                print(f"  {'':22}    → {config['reason']}")
 
     return results
 
@@ -128,21 +291,27 @@ def test_zotero() -> TestResult:
         return TestResult("Zotero API", Status.FAILED, f"Connection error: {e}")
 
 
-def test_voyage() -> TestResult:
-    """Test Voyage AI API connection."""
-    api_key = os.environ.get("VOYAGE_API_KEY")
+def test_voyage_embedding(api_key: str, model: str) -> TestResult:
+    """Test Voyage AI embedding API connection.
 
+    Args:
+        api_key: Voyage API key.
+        model: Model name (e.g., 'voyage-3.5').
+
+    Returns:
+        TestResult with connection status.
+    """
     if not api_key:
-        return TestResult("Voyage AI", Status.FAILED, "Missing API key")
+        return TestResult("Voyage Embedding", Status.FAILED, "Missing API key")
 
     try:
-        import voyageai
         import numpy as np
+        import voyageai
 
         client = voyageai.Client(api_key=api_key)
         result = client.embed(
             ["test connection"],
-            model="voyage-3.5",
+            model=model,
             input_type="document",
         )
 
@@ -150,16 +319,178 @@ def test_voyage() -> TestResult:
         dim = embeddings.shape[1]
 
         if dim == 1024:
-            return TestResult("Voyage AI", Status.SUCCESS, f"Connected (embedding dim: {dim})")
+            return TestResult(
+                "Voyage Embedding",
+                Status.SUCCESS,
+                f"Connected (model: {model}, dim: {dim})",
+            )
         else:
-            return TestResult("Voyage AI", Status.FAILED, f"Unexpected embedding dimension: {dim}")
+            return TestResult(
+                "Voyage Embedding",
+                Status.FAILED,
+                f"Unexpected embedding dimension: {dim}",
+            )
 
     except voyageai.error.AuthenticationError:
-        return TestResult("Voyage AI", Status.FAILED, "Invalid API key")
+        return TestResult("Voyage Embedding", Status.FAILED, "Invalid API key")
     except voyageai.error.RateLimitError:
-        return TestResult("Voyage AI", Status.FAILED, "Rate limit exceeded")
+        return TestResult("Voyage Embedding", Status.FAILED, "Rate limit exceeded")
     except Exception as e:
-        return TestResult("Voyage AI", Status.FAILED, f"Error: {e}")
+        return TestResult("Voyage Embedding", Status.FAILED, f"Error: {str(e)[:100]}")
+
+
+def test_voyage_rerank(api_key: str, model: str) -> TestResult:
+    """Test Voyage rerank API connection.
+
+    Args:
+        api_key: Voyage API key.
+        model: Model name (e.g., 'rerank-2', 'rerank-2.5').
+
+    Returns:
+        TestResult with connection status.
+    """
+    if not api_key:
+        return TestResult("Voyage Rerank", Status.FAILED, "Missing API key")
+
+    try:
+        import voyageai
+
+        client = voyageai.Client(api_key=api_key)
+        result = client.rerank(
+            query="machine learning research",
+            documents=["deep learning paper", "cooking recipe"],
+            model=model,
+            top_k=2,
+        )
+
+        if result.results:
+            top_score = result.results[0].relevance_score
+            return TestResult(
+                "Voyage Rerank",
+                Status.SUCCESS,
+                f"Connected (model: {model}, top_score: {top_score:.3f})",
+            )
+        else:
+            return TestResult("Voyage Rerank", Status.FAILED, "No results returned")
+
+    except voyageai.error.AuthenticationError:
+        return TestResult("Voyage Rerank", Status.FAILED, "Invalid API key")
+    except voyageai.error.RateLimitError:
+        return TestResult("Voyage Rerank", Status.FAILED, "Rate limit exceeded")
+    except Exception as e:
+        return TestResult("Voyage Rerank", Status.FAILED, f"Error: {str(e)[:100]}")
+
+
+def test_dashscope_embedding(api_key: str, model: str) -> TestResult:
+    """Test DashScope embedding API connection.
+
+    Args:
+        api_key: DashScope API key.
+        model: Model name (e.g., 'text-embedding-v4').
+
+    Returns:
+        TestResult with connection status.
+    """
+    if not api_key:
+        return TestResult("DashScope Embedding", Status.FAILED, "Missing API key")
+
+    try:
+        from http import HTTPStatus
+
+        from dashscope import TextEmbedding
+
+        resp = TextEmbedding.call(
+            model=model,
+            input=["test connection"],
+            api_key=api_key,
+        )
+
+        if resp.status_code == HTTPStatus.OK:
+            embeddings = resp.output["embeddings"]
+            dim = len(embeddings[0]["embedding"]) if embeddings else 0
+            return TestResult(
+                "DashScope Embedding",
+                Status.SUCCESS,
+                f"Connected (model: {model}, dim: {dim})",
+            )
+        else:
+            return TestResult(
+                "DashScope Embedding",
+                Status.FAILED,
+                f"API error: {resp.code} - {resp.message}",
+            )
+
+    except ImportError:
+        return TestResult(
+            "DashScope Embedding",
+            Status.FAILED,
+            "dashscope package not installed",
+        )
+    except Exception as e:
+        return TestResult(
+            "DashScope Embedding",
+            Status.FAILED,
+            f"Error: {str(e)[:100]}",
+        )
+
+
+def test_dashscope_rerank(api_key: str, model: str) -> TestResult:
+    """Test DashScope rerank API connection.
+
+    Args:
+        api_key: DashScope API key.
+        model: Model name (e.g., 'qwen3-rerank').
+
+    Returns:
+        TestResult with connection status.
+    """
+    if not api_key:
+        return TestResult("DashScope Rerank", Status.FAILED, "Missing API key")
+
+    try:
+        from http import HTTPStatus
+
+        from dashscope import TextReRank
+
+        resp = TextReRank.call(
+            model=model,
+            query="machine learning research",
+            documents=["deep learning paper", "cooking recipe"],
+            top_n=2,
+            return_documents=False,
+            api_key=api_key,
+        )
+
+        if resp.status_code == HTTPStatus.OK:
+            results = resp.output["results"]
+            if results:
+                top_score = results[0]["relevance_score"]
+                return TestResult(
+                    "DashScope Rerank",
+                    Status.SUCCESS,
+                    f"Connected (model: {model}, top_score: {top_score:.3f})",
+                )
+            else:
+                return TestResult("DashScope Rerank", Status.FAILED, "No results returned")
+        else:
+            return TestResult(
+                "DashScope Rerank",
+                Status.FAILED,
+                f"API error: {resp.code} - {resp.message}",
+            )
+
+    except ImportError:
+        return TestResult(
+            "DashScope Rerank",
+            Status.FAILED,
+            "dashscope package not installed",
+        )
+    except Exception as e:
+        return TestResult(
+            "DashScope Rerank",
+            Status.FAILED,
+            f"Error: {str(e)[:100]}",
+        )
 
 
 def test_crossref() -> TestResult:
@@ -296,39 +627,153 @@ def test_kimi() -> TestResult:
         return TestResult("Kimi", Status.FAILED, f"Connection error: {e}")
 
 
-def run_tests() -> list[TestResult]:
-    """Run all API connection tests."""
+def test_deepseek() -> TestResult:
+    """Test DeepSeek API connection."""
+    api_key = os.environ.get("DEEPSEEK_API_KEY")
+
+    if not api_key:
+        return TestResult("DeepSeek", Status.SKIPPED, "DEEPSEEK_API_KEY not set")
+
+    try:
+        # Use the models endpoint to test authentication (no tokens consumed)
+        resp = requests.get(
+            "https://api.deepseek.com/models",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+            },
+            timeout=30,
+        )
+
+        if resp.status_code == 200:
+            data = resp.json()
+            model_count = len(data.get("data", []))
+            return TestResult("DeepSeek", Status.SUCCESS, f"Connected ({model_count} models available)")
+        elif resp.status_code == 401:
+            return TestResult("DeepSeek", Status.FAILED, "Invalid API key")
+        else:
+            return TestResult("DeepSeek", Status.FAILED, f"HTTP {resp.status_code}: {resp.text[:100]}")
+
+    except requests.exceptions.Timeout:
+        return TestResult("DeepSeek", Status.FAILED, "Connection timeout")
+    except requests.exceptions.RequestException as e:
+        return TestResult("DeepSeek", Status.FAILED, f"Connection error: {e}")
+
+
+def run_tests(settings: Settings | None) -> list[TestResult]:
+    """Run all API connection tests based on configuration.
+
+    Args:
+        settings: Loaded settings or None for fallback mode.
+
+    Returns:
+        List of test results.
+    """
     print_section("API Connection Tests")
 
-    tests = [
-        ("Zotero API", test_zotero),
-        ("Voyage AI", test_voyage),
-        ("Crossref", test_crossref),
-        ("arXiv", test_arxiv),
-        ("OpenRouter", test_openrouter),
-        ("Kimi", test_kimi),
-    ]
-
     results = []
-    for i, (name, test_func) in enumerate(tests, 1):
-        print(f"  [{i}/{len(tests)}] {name:15} ", end="", flush=True)
-        result = test_func()
+    test_count = 0
+
+    # Always test Zotero
+    test_count += 1
+    print(f"  [{test_count}] Zotero API      ", end="", flush=True)
+    result = test_zotero()
+    results.append(result)
+    print(format_status(result.status, result.message))
+
+    # Test embedding provider based on config
+    if settings is None:
+        # Fallback: test Voyage
+        test_count += 1
+        print(f"  [{test_count}] Voyage Embedding", end="", flush=True)
+        api_key = os.environ.get("VOYAGE_API_KEY", "")
+        result = test_voyage_embedding(api_key, "voyage-3.5")
         results.append(result)
         print(format_status(result.status, result.message))
+
+    else:
+        # Config-aware testing
+        if settings.embedding.provider == "voyage":
+            test_count += 1
+            print(f"  [{test_count}] Voyage Embedding", end="", flush=True)
+            api_key = os.environ.get("VOYAGE_API_KEY", "")
+            result = test_voyage_embedding(api_key, settings.embedding.model)
+            results.append(result)
+            print(format_status(result.status, result.message))
+
+            # Test rerank only if interests enabled
+            if settings.scoring.interests.enabled:
+                test_count += 1
+                print(f"  [{test_count}] Voyage Rerank   ", end="", flush=True)
+                result = test_voyage_rerank(api_key, settings.scoring.rerank.model)
+                results.append(result)
+                print(format_status(result.status, result.message))
+
+        elif settings.embedding.provider == "dashscope":
+            test_count += 1
+            print(f"  [{test_count}] DashScope Embed ", end="", flush=True)
+            api_key = os.environ.get("DASHSCOPE_API_KEY", "")
+            result = test_dashscope_embedding(api_key, settings.embedding.model)
+            results.append(result)
+            print(format_status(result.status, result.message))
+
+            # Test rerank only if interests enabled
+            if settings.scoring.interests.enabled:
+                test_count += 1
+                print(f"  [{test_count}] DashScope Rerank", end="", flush=True)
+                result = test_dashscope_rerank(api_key, settings.scoring.rerank.model)
+                results.append(result)
+                print(format_status(result.status, result.message))
+
+        # Test LLM provider only if enabled
+        if settings.llm.enabled:
+            if settings.llm.provider == "kimi":
+                test_count += 1
+                print(f"  [{test_count}] Kimi LLM        ", end="", flush=True)
+                result = test_kimi()
+                results.append(result)
+                print(format_status(result.status, result.message))
+            elif settings.llm.provider == "openrouter":
+                test_count += 1
+                print(f"  [{test_count}] OpenRouter LLM  ", end="", flush=True)
+                result = test_openrouter()
+                results.append(result)
+                print(format_status(result.status, result.message))
+            elif settings.llm.provider == "deepseek":
+                test_count += 1
+                print(f"  [{test_count}] DeepSeek LLM    ", end="", flush=True)
+                result = test_deepseek()
+                results.append(result)
+                print(format_status(result.status, result.message))
+
+    # Always test data sources
+    test_count += 1
+    print(f"  [{test_count}] Crossref        ", end="", flush=True)
+    result = test_crossref()
+    results.append(result)
+    print(format_status(result.status, result.message))
+
+    test_count += 1
+    print(f"  [{test_count}] arXiv           ", end="", flush=True)
+    result = test_arxiv()
+    results.append(result)
+    print(format_status(result.status, result.message))
 
     return results
 
 
-def print_summary(results: list[TestResult]) -> int:
-    """Print test summary and return exit code."""
+def print_summary(results: list[TestResult], settings: Settings | None) -> int:
+    """Print test summary and return exit code.
+
+    Args:
+        results: List of test results.
+        settings: Loaded settings or None for fallback mode.
+
+    Returns:
+        Exit code (0 = success, 1 = failure).
+    """
     passed = sum(1 for r in results if r.status == Status.SUCCESS)
     failed = sum(1 for r in results if r.status == Status.FAILED)
     skipped = sum(1 for r in results if r.status == Status.SKIPPED)
-
-    # Check if at least one LLM API is available
-    llm_apis = ["OpenRouter", "Kimi"]
-    llm_results = [r for r in results if r.name in llm_apis]
-    llm_available = any(r.status == Status.SUCCESS for r in llm_results)
 
     print()
     print("=" * 64)
@@ -341,15 +786,23 @@ def print_summary(results: list[TestResult]) -> int:
     if failed_tests:
         print("Failed tests:")
         for r in failed_tests:
-            print(f"  \u274c {r.name}: {r.message}")
+            print(f"  ❌ {r.name}: {r.message}")
         print()
 
-    # Check LLM API requirement
-    if not llm_available:
-        print("\u274c At least one LLM API (OpenRouter or Kimi) must be configured")
-        print("   AI summarization requires a working LLM API connection.")
+    # Show configuration summary
+    if settings:
+        print("Configuration Summary:")
+        print(f"  Embedding: {settings.embedding.provider} ({settings.embedding.model})")
+        llm_status = settings.llm.provider if settings.llm.enabled else "disabled"
+        if settings.llm.enabled:
+            print(f"  LLM: {llm_status} ({settings.llm.model})")
+        else:
+            print(f"  LLM: {llm_status}")
+        if settings.scoring.interests.enabled:
+            print(f"  Rerank: {settings.scoring.rerank.provider} ({settings.scoring.rerank.model})")
+        else:
+            print("  Rerank: disabled (interests.enabled=false)")
         print()
-        return 1
 
     return 1 if failed > 0 else 0
 
@@ -358,26 +811,44 @@ def main():
     """Main entry point."""
     print_header()
 
-    # Check environment variables
-    env_status = check_env_vars()
+    # Load configuration
+    settings = load_config()
 
-    # Check required variables
-    missing_required = [name for name, config in ENV_VARS.items() if config["required"] and not env_status.get(name)]
+    # Detect required env vars based on config
+    env_vars = detect_required_env_vars(settings)
+
+    # Check env vars
+    env_status = check_env_vars(env_vars)
+
+    # Check for missing required vars
+    missing_required = [name for name, config in env_vars.items() if config["required"] and not env_status.get(name)]
 
     if missing_required:
         print()
-        print("\u274c Missing required environment variables:")
+        print("❌ Missing required environment variables:")
         for var in missing_required:
             print(f"   - {var}")
+            if env_vars[var].get("reason"):
+                print(f"     Reason: {env_vars[var]['reason']}")
         print()
         print("Please set these variables before running the tests.")
         sys.exit(1)
 
+    # Validate provider coupling if config loaded
+    if settings and settings.scoring.interests.enabled:
+        if settings.scoring.rerank.provider != settings.embedding.provider:
+            print()
+            print("❌ Configuration Error:")
+            print("   When interests.enabled=true, embedding and rerank providers must match")
+            print(f"   Current: embedding={settings.embedding.provider}, rerank={settings.scoring.rerank.provider}")
+            print()
+            sys.exit(1)
+
     # Run API tests
-    results = run_tests()
+    results = run_tests(settings)
 
     # Print summary and exit
-    exit_code = print_summary(results)
+    exit_code = print_summary(results, settings)
     sys.exit(exit_code)
 
 

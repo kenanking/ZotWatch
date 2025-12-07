@@ -10,7 +10,7 @@ from dashscope import TextEmbedding, TextReRank
 from zotwatch.core.constants import DASHSCOPE_EMBEDDING_DIM
 from zotwatch.core.exceptions import ConfigurationError
 
-from .base import BaseEmbeddingProvider, BaseReranker, RerankResult
+from .base import BaseEmbeddingProvider, BaseReranker
 
 logger = logging.getLogger(__name__)
 
@@ -52,9 +52,7 @@ class DashScopeEmbedding(BaseEmbeddingProvider):
     def _ensure_api_key(self) -> str:
         """Ensure API key is configured."""
         if not self._api_key:
-            raise ConfigurationError(
-                "DashScope API key is required. Set DASHSCOPE_API_KEY environment variable."
-            )
+            raise ConfigurationError("DashScope API key is required. Set DASHSCOPE_API_KEY environment variable.")
         return self._api_key
 
     def encode(self, texts: Iterable[str]) -> np.ndarray:
@@ -86,9 +84,7 @@ class DashScopeEmbedding(BaseEmbeddingProvider):
             )
 
             if resp.status_code != HTTPStatus.OK:
-                raise RuntimeError(
-                    f"DashScope embedding failed: {resp.code} - {resp.message}"
-                )
+                raise RuntimeError(f"DashScope embedding failed: {resp.code} - {resp.message}")
 
             # Extract embeddings from response
             for item in resp.output["embeddings"]:
@@ -106,6 +102,8 @@ class DashScopeReranker(BaseReranker):
     Uses qwen3-rerank model by default.
     """
 
+    max_documents = 500  # DashScope recommended limit
+
     def __init__(
         self,
         api_key: str,
@@ -118,7 +116,6 @@ class DashScopeReranker(BaseReranker):
             api_key: DashScope API key.
             model: Rerank model name (default: qwen3-rerank).
             instruct: Optional task instruction for qwen3-rerank model.
-                Default: "Given a web search query, retrieve relevant passages that answer the query."
         """
         self._api_key = api_key
         self.model = model
@@ -127,117 +124,32 @@ class DashScopeReranker(BaseReranker):
     def _ensure_api_key(self) -> str:
         """Ensure API key is configured."""
         if not self._api_key:
-            raise ConfigurationError(
-                "DashScope API key is required. Set DASHSCOPE_API_KEY environment variable."
-            )
+            raise ConfigurationError("DashScope API key is required. Set DASHSCOPE_API_KEY environment variable.")
         return self._api_key
 
-    def rerank(
+    def _rerank_batch(
         self,
         query: str,
         documents: list[str],
-        top_k: int = 5,
+        top_k: int,
     ) -> list[tuple[int, float]]:
-        """Rerank documents by relevance to query.
-
-        Args:
-            query: Search query (refined interests).
-            documents: List of document texts (title + abstract).
-            top_k: Number of top results to return.
-
-        Returns:
-            List of (original_index, relevance_score) tuples, sorted by score descending.
-        """
-        if not documents:
-            return []
-
+        """DashScope-specific single-batch reranking."""
         api_key = self._ensure_api_key()
-
-        # Ensure top_k doesn't exceed document count
-        top_k = min(top_k, len(documents))
-
-        logger.info(
-            "Reranking %d documents with query (top_k=%d)",
-            len(documents),
-            top_k,
-        )
-
-        try:
-            resp = TextReRank.call(
-                model=self.model,
-                query=query,
-                documents=documents,
-                top_n=top_k,
-                return_documents=False,
-                api_key=api_key,
-            )
-
-            if resp.status_code != HTTPStatus.OK:
-                raise RuntimeError(
-                    f"DashScope rerank failed: {resp.code} - {resp.message}"
-                )
-
-            results = resp.output["results"]
-            rerank_results = [(r["index"], r["relevance_score"]) for r in results]
-
-            logger.info(
-                "Reranking complete: %d results, top score=%.4f",
-                len(rerank_results),
-                rerank_results[0][1] if rerank_results else 0.0,
-            )
-
-            return rerank_results
-
-        except Exception as e:
-            logger.error("Reranking failed: %s", e)
-            raise
-
-    def rerank_with_details(
-        self,
-        query: str,
-        documents: list[str],
-        top_k: int = 5,
-    ) -> list[RerankResult]:
-        """Rerank documents and return detailed results.
-
-        Args:
-            query: Search query.
-            documents: List of document texts.
-            top_k: Number of top results to return.
-
-        Returns:
-            List of RerankResult objects with full details.
-        """
-        if not documents:
-            return []
-
-        api_key = self._ensure_api_key()
-        top_k = min(top_k, len(documents))
 
         resp = TextReRank.call(
             model=self.model,
             query=query,
             documents=documents,
             top_n=top_k,
-            return_documents=True,
+            return_documents=False,
             api_key=api_key,
         )
 
         if resp.status_code != HTTPStatus.OK:
-            raise RuntimeError(
-                f"DashScope rerank failed: {resp.code} - {resp.message}"
-            )
+            raise RuntimeError(f"DashScope rerank failed: {resp.code} - {resp.message}")
 
         results = resp.output["results"]
-        return [
-            RerankResult(
-                index=r["index"],
-                relevance_score=r["relevance_score"],
-                document=r.get("document", {}).get("text", documents[r["index"]]),
-            )
-            for r in results
-        ]
+        return [(r["index"], r["relevance_score"]) for r in results]
 
 
 __all__ = ["DashScopeEmbedding", "DashScopeReranker"]
-

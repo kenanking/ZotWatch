@@ -169,6 +169,68 @@ uv run zotwatch profile --full
 
 This is necessary because embeddings from different providers are not compatible.
 
+### Switching LLM Providers
+
+ZotWatch supports three LLM providers for AI summaries:
+- **OpenRouter**: Access to multiple LLM providers (Claude, GPT-4, etc.)
+- **Kimi** (Moonshot AI): Chinese LLM with thinking model support
+- **DeepSeek**: Cost-effective LLM with reasoning model support
+
+#### OpenRouter
+
+```yaml
+# config/config.yaml
+llm:
+  enabled: true
+  provider: "openrouter"
+  api_key: "${OPENROUTER_API_KEY}"
+  model: "anthropic/claude-3.5-sonnet"
+```
+
+Environment variable:
+```bash
+OPENROUTER_API_KEY=your_openrouter_api_key_here
+```
+
+#### Kimi (Moonshot AI)
+
+```yaml
+# config/config.yaml
+llm:
+  enabled: true
+  provider: "kimi"
+  api_key: "${MOONSHOT_API_KEY}"
+  model: "kimi-k2-turbo-preview"  # or "kimi-k2-thinking-turbo" for thinking mode
+```
+
+Environment variable:
+```bash
+MOONSHOT_API_KEY=your_moonshot_api_key_here
+```
+
+#### DeepSeek
+
+```yaml
+# config/config.yaml
+llm:
+  enabled: true
+  provider: "deepseek"
+  api_key: "${DEEPSEEK_API_KEY}"
+  model: "deepseek-chat"  # or "deepseek-reasoner" for reasoning mode
+  max_tokens: 4096
+  temperature: 0.3
+```
+
+Environment variable:
+```bash
+DEEPSEEK_API_KEY=your_deepseek_api_key_here
+```
+
+**Note on Reasoning Models:**
+- DeepSeek's `deepseek-reasoner` model uses chain-of-thought reasoning
+- Temperature parameter is automatically disabled for reasoning models
+- Reasoning models may require longer timeouts (120s default)
+
 ### Core Components
 
 - `VoyageEmbedder` (`infrastructure/embedding/voyage.py`): Wraps Voyage AI API (voyage-3.5, 1024-dim embeddings)
@@ -176,6 +238,8 @@ This is necessary because embeddings from different providers are not compatible
 - `SQLiteStorage` (`infrastructure/storage/sqlite.py`): SQLite abstraction for items and embeddings
 - `Settings` (`config/settings.py`): Pydantic models for configuration with env var expansion
 - `OpenRouterClient` (`llm/openrouter.py`): OpenRouter API client for LLM calls
+- `KimiClient` (`llm/kimi.py`): Kimi (Moonshot AI) API client for LLM calls
+- `DeepSeekClient` (`llm/deepseek.py`): DeepSeek API client for LLM calls
 - `LLMSummarizer` (`llm/summarizer.py`): Generates structured paper summaries
 
 ## Environment Variables
@@ -184,7 +248,7 @@ Required:
 - `ZOTERO_API_KEY`: Zotero Web API key
 - `ZOTERO_USER_ID`: Zotero user ID
 - `VOYAGE_API_KEY` or `DASHSCOPE_API_KEY`: Embedding provider API key (depending on `embedding.provider` in config.yaml)
-- `MOONSHOT_API_KEY` or `OPENROUTER_API_KEY`: LLM provider API key (at least one required, depending on `llm.provider` in config.yaml)
+- `MOONSHOT_API_KEY`, `OPENROUTER_API_KEY`, or `DEEPSEEK_API_KEY`: LLM provider API key (at least one required, depending on `llm.provider` in config.yaml)
 
 Optional:
 - `CROSSREF_MAILTO`: Crossref polite pool email
@@ -194,10 +258,29 @@ Optional:
 - Preprint ratio is configurable via `watch.max_preprint_ratio` (default: 0.9)
 - Recent paper filter is configurable via `watch.recent_days` (default: 7 days)
 - GitHub Actions caches profile artifacts monthly to avoid full rebuilds
-- AI summaries require LLM API key (`MOONSHOT_API_KEY` or `OPENROUTER_API_KEY`) and `llm.enabled: true` in config
+- AI summaries require LLM API key (`MOONSHOT_API_KEY`, `OPENROUTER_API_KEY`, or `DEEPSEEK_API_KEY`) and `llm.enabled: true` in config
 - Embedding and rerank providers must use the same provider when interests.enabled=true (both Voyage or both DashScope)
 - When writing code, please use English for all comments
 - Use Python 3.10+ type annotation syntax: `list[X]`, `dict[K, V]`, `X | None` instead of `List`, `Dict`, `Optional` from typing module
+
+## Commit Message Conventions
+
+This project follows Conventional Commits style for commit messages:
+
+- **Type**: lowercase verb category (feat, fix, refactor, chore, docs, test, perf, etc.)
+  - Optional scope in parentheses to indicate submodule: `feat(profile): ...`
+- **Subject**: concise imperative sentence, lowercase first letter, no ending period
+  - Keep the entire message within ~72 characters
+- **Structure**: `type(scope?): subject`
+  - Examples: `feat: add temporal clustering` or `fix(api): handle timeouts`
+- **Body** (optional): for complex changes, add a blank line after subject then write:
+  - Bullet points explaining the changes
+  - Breaking changes (if any)
+  - Related issues
+- **Voice**: use present tense/imperative mood
+  - Focus on "what" and "why" rather than implementation details
+  - Avoid lengthy descriptions and ending punctuation
+
 ## Troubleshooting
 
 ### Provider Mismatch Error

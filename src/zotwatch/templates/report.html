@@ -6,6 +6,7 @@
   <title>ZotWatch 文献推荐 - {{ generated_at.strftime('%Y-%m-%d') }}</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
   <script>
     tailwind.config = {
       theme: {
@@ -32,6 +33,12 @@
     .content-container { max-width: 48rem; margin: 0 auto; padding: 0 1rem; }
     @media (min-width: 768px) { .content-container { padding: 0 2rem; } }
     @media (min-width: 1024px) { .content-container { padding: 0 4rem; } }
+
+    /* Cluster graph responsive */
+    .cluster-graph-container { width: 100%; height: 280px; touch-action: none; }
+    @media (min-width: 640px) { .cluster-graph-container { height: 320px; } }
+    @media (min-width: 768px) { .cluster-graph-container { height: 350px; } }
+    #cluster-graph svg { overflow: visible; }
   </style>
 </head>
 <body class="bg-bg-primary min-h-screen text-text-primary">
@@ -139,6 +146,20 @@
         <h4 class="text-sm font-medium text-text-primary mb-3">论文发表年份分布</h4>
         <div style="height: 180px;">
           <canvas id="yearDistChart"></canvas>
+        </div>
+      </div>
+      {% endif %}
+
+      <!-- Cluster Visualization (Force-Directed Graph) - Placed after year distribution -->
+      {% if researcher_profile.clustered_profile and researcher_profile.clustered_profile.valid_cluster_count > 0 %}
+      <div class="bg-bg-card rounded-lg border border-border-color p-4 mb-4">
+        <h4 class="text-sm font-medium text-text-primary mb-3">
+          研究方向聚类图谱
+          <span class="text-xs text-text-secondary font-normal ml-2">({{ researcher_profile.clustered_profile.valid_cluster_count }} 个聚类)</span>
+        </h4>
+        <div id="cluster-graph" class="cluster-graph-container"></div>
+        <div class="text-xs text-text-secondary mt-3">
+          覆盖 {{ researcher_profile.clustered_profile.papers_in_valid_clusters }}/{{ researcher_profile.clustered_profile.total_papers }} 篇论文（仅含摘要的文献参与聚类）
         </div>
       </div>
       {% endif %}
@@ -356,6 +377,232 @@
               }
             }
           }
+        });
+      }
+      {% endif %}
+
+      // D3.js Force-Directed Cluster Graph (Responsive)
+      {% if researcher_profile.clustered_profile and researcher_profile.clustered_profile.valid_cluster_count > 0 %}
+      const clusterContainer = document.getElementById('cluster-graph');
+      if (clusterContainer) {
+        const clusters = [
+          {% for c in researcher_profile.clustered_profile.clusters %}
+          {
+            id: {{ c.cluster_id }},
+            label: {{ c.label|default('聚类 ' ~ loop.index, true)|tojson }},
+            size: {{ c.member_count }},
+            coherence: {{ c.coherence_score }},
+            keywords: [{% for kw in c.keywords[:3] %}{{ kw|tojson }}{% if not loop.last %}, {% endif %}{% endfor %}],
+            // Use normalized (weighted) centroid from backend to avoid front-end recomputation bias
+            centroid: {{ (c.weighted_centroid or c.centroid)|tojson }}
+          }{% if not loop.last %},{% endif %}
+          {% endfor %}
+        ];
+
+        // Precomputed inter-cluster links from backend (cosine similarity of normalized centroids)
+        const links = {{ cluster_links|default([], true)|tojson }};
+
+        // Muted academic color palette
+        const academicColors = [
+          '#4E79A7', '#F28E2B', '#E15759', '#76B7B2', '#59A14F',
+          '#EDC948', '#B07AA1', '#FF9DA7', '#9C755F', '#BAB0AC',
+          '#86BCB6', '#D37295', '#8CD17D', '#499894', '#FABFD2',
+          '#79706E', '#D4A6C8', '#9D7660', '#B6992D', '#A0CBE8'
+        ];
+        const colorScale = (i) => academicColors[i % academicColors.length];
+
+        let svg, simulation, node, link, sizeScale;
+
+        function createGraph() {
+          const width = clusterContainer.clientWidth;
+          const height = clusterContainer.clientHeight || 280;
+          const isMobile = width < 500;
+
+          // Clear existing
+          clusterContainer.innerHTML = '';
+
+          // Responsive size scale
+          const minRadius = isMobile ? 16 : 20;
+          const maxRadius = isMobile ? 38 : 48;
+          sizeScale = d3.scaleSqrt()
+            .domain([0, d3.max(clusters, d => d.size)])
+            .range([minRadius, maxRadius]);
+
+          // Create SVG
+          svg = d3.select('#cluster-graph')
+            .append('svg')
+            .attr('width', width)
+            .attr('height', height)
+            .attr('viewBox', [0, 0, width, height]);
+
+            // Responsive simulation forces
+          const chargeStrength = isMobile ? -100 : -150;
+          const linkDistance = isMobile ? 60 : 90;
+
+          simulation = d3.forceSimulation(clusters)
+            .force('link', d3.forceLink(links).id(d => d.id).distance(linkDistance).strength(0.2))
+            .force('charge', d3.forceManyBody().strength(chargeStrength))
+            .force('center', d3.forceCenter(width / 2, height / 2))
+            .force('collision', d3.forceCollide().radius(d => sizeScale(d.size) + (isMobile ? 4 : 6)))
+            .velocityDecay(0.6)  // Higher decay = less momentum, reduces shaking
+            .alphaDecay(0.05);   // Faster cooling
+
+          // Draw links
+          link = svg.append('g')
+            .attr('stroke', '#e2e8f0')
+            .attr('stroke-opacity', 0.6)
+            .selectAll('line')
+            .data(links)
+            .join('line')
+            .attr('stroke-width', d => Math.max(1, d.value * 1.5));
+
+          // Draw nodes
+          node = svg.append('g')
+            .selectAll('g')
+            .data(clusters)
+            .join('g')
+            .style('cursor', 'grab');
+
+          // Node circles
+          node.append('circle')
+            .attr('r', d => sizeScale(d.size))
+            .attr('fill', (d, i) => colorScale(i))
+            .attr('fill-opacity', 0.85)
+            .attr('stroke', '#fff')
+            .attr('stroke-width', isMobile ? 1.5 : 2);
+
+          // Text wrapping function
+          const fontSize = isMobile ? 7 : 8;
+          const lineHeight = isMobile ? 8 : 9;
+          const charWidth = isMobile ? 5 : 5.5;
+
+          function wrapText(text, radius) {
+            text.each(function() {
+              const textEl = d3.select(this);
+              const label = textEl.text();
+              // Keep text well within circle bounds
+              const maxWidth = radius * 1.2;
+
+              textEl.text(null);
+
+              let lines = [];
+              let currentLine = '';
+              for (let char of label) {
+                if ((currentLine.length + 1) * charWidth > maxWidth && currentLine) {
+                  lines.push(currentLine);
+                  currentLine = char;
+                } else {
+                  currentLine += char;
+                }
+              }
+              if (currentLine) lines.push(currentLine);
+
+              // Limit to 2 lines max
+              if (lines.length > 2) {
+                lines = lines.slice(0, 2);
+                lines[1] = lines[1].substring(0, Math.max(0, lines[1].length - 1)) + '..';
+              }
+
+              const startY = -(lines.length - 1) * lineHeight / 2;
+
+              lines.forEach((line, i) => {
+                textEl.append('tspan')
+                  .attr('x', 0)
+                  .attr('dy', i === 0 ? startY : lineHeight)
+                  .text(line);
+              });
+            });
+          }
+
+          // Node labels
+          node.append('text')
+            .text(d => d.label)
+            .attr('text-anchor', 'middle')
+            .attr('dominant-baseline', 'middle')
+            .attr('font-size', fontSize + 'px')
+            .attr('font-weight', '500')
+            .attr('fill', '#fff')
+            .attr('pointer-events', 'none')
+            .each(function(d) {
+              wrapText(d3.select(this), sizeScale(d.size));
+            });
+
+          // Paper count label
+          node.append('text')
+            .text(d => `(${d.size}篇)`)
+            .attr('text-anchor', 'middle')
+            .attr('dy', d => sizeScale(d.size) + (isMobile ? 10 : 12))
+            .attr('font-size', fontSize + 'px')
+            .attr('fill', '#94a3b8');
+
+          // Tooltip
+          node.append('title')
+            .text(d => `${d.label}\n论文数: ${d.size}\n关键词: ${d.keywords.join(', ')}`);
+
+          // Drag behavior (touch + mouse)
+          const drag = d3.drag()
+            .on('start', dragstarted)
+            .on('drag', dragged)
+            .on('end', dragended);
+
+          node.call(drag);
+
+          // Simulation tick
+          simulation.on('tick', () => {
+            // Clamp node positions first so links use clamped coords
+            node.attr('transform', d => {
+              const r = sizeScale(d.size);
+              const padding = isMobile ? 5 : 8;
+              const maxY = height - r - (isMobile ? 12 : 15);
+              d.x = Math.max(r + padding, Math.min(width - r - padding, d.x));
+              d.y = Math.max(r + padding, Math.min(maxY, d.y));
+              return `translate(${d.x},${d.y})`;
+            });
+
+            // Now draw links with clamped positions
+            link
+              .attr('x1', d => d.source.x)
+              .attr('y1', d => d.source.y)
+              .attr('x2', d => d.target.x)
+              .attr('y2', d => d.target.y);
+          });
+
+          function dragstarted(event, d) {
+            // Use low alphaTarget to minimize shaking of other nodes
+            if (!event.active) simulation.alphaTarget(0.05).restart();
+            d.fx = d.x;
+            d.fy = d.y;
+            d3.select(this).style('cursor', 'grabbing');
+          }
+
+          function dragged(event, d) {
+            const r = sizeScale(d.size);
+            const padding = isMobile ? 5 : 8;
+            const maxY = height - r - (isMobile ? 12 : 15);
+            d.fx = Math.max(r + padding, Math.min(width - r - padding, event.x));
+            d.fy = Math.max(r + padding, Math.min(maxY, event.y));
+          }
+
+          function dragended(event, d) {
+            if (!event.active) simulation.alphaTarget(0);
+            d.fx = null;
+            d.fy = null;
+            d3.select(this).style('cursor', 'grab');
+          }
+        }
+
+        // Initial render
+        createGraph();
+
+        // Debounced resize handler
+        let resizeTimeout;
+        window.addEventListener('resize', () => {
+          clearTimeout(resizeTimeout);
+          resizeTimeout = setTimeout(() => {
+            // Reset node positions for new layout
+            clusters.forEach(d => { d.x = undefined; d.y = undefined; d.fx = null; d.fy = null; });
+            createGraph();
+          }, 250);
         });
       }
       {% endif %}

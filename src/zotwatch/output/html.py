@@ -1,6 +1,7 @@
 """HTML report generation."""
 
 import logging
+import math
 from datetime import datetime
 from importlib import resources
 from pathlib import Path
@@ -39,6 +40,38 @@ def _convert_utc_to_tz(dt: datetime | None, target_tz: ZoneInfo) -> datetime | N
         # Assume naive datetime is UTC
         dt = dt.replace(tzinfo=ZoneInfo("UTC"))
     return dt.astimezone(target_tz)
+
+
+def _build_cluster_links(clustered_profile, threshold: float = 0.3) -> list[dict]:
+    """Precompute inter-cluster similarity links from normalized centroids.
+
+    Uses weighted_centroid when available. Falls back to centroid.
+    """
+    clusters = getattr(clustered_profile, "clusters", None) or []
+    if not clusters:
+        return []
+
+    # Normalize centroids to avoid front-end recomputation bias
+    normalized = []
+    for c in clusters:
+        vec = c.weighted_centroid or c.centroid or []
+        norm = math.sqrt(sum(v * v for v in vec))
+        if norm == 0:
+            continue
+        normalized.append((c.cluster_id, [v / norm for v in vec]))
+
+    links: list[dict] = []
+    n = len(normalized)
+    for i in range(n):
+        id_i, vec_i = normalized[i]
+        for j in range(i + 1, n):
+            id_j, vec_j = normalized[j]
+            # dot product (cosine since normalized)
+            sim = sum(a * b for a, b in zip(vec_i, vec_j))
+            if sim > threshold:
+                links.append({"source": id_i, "target": id_j, "value": sim})
+
+    return links
 
 
 def render_html(
@@ -93,8 +126,11 @@ def render_html(
 
     # Convert profile generation time to user timezone
     profile_generated_at = None
+    cluster_links: list[dict] = []
     if researcher_profile:
         profile_generated_at = _convert_utc_to_tz(researcher_profile.generated_at, tz)
+        if researcher_profile.clustered_profile:
+            cluster_links = _build_cluster_links(researcher_profile.clustered_profile)
 
     rendered = template.render(
         works=works,
@@ -104,6 +140,7 @@ def render_html(
         overall_summaries=overall_summaries or {},
         researcher_profile=researcher_profile,
         profile_generated_at=profile_generated_at,
+        cluster_links=cluster_links,
     )
 
     path = Path(output_path)

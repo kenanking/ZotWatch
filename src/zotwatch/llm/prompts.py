@@ -189,6 +189,38 @@ TITLE_TRANSLATION_PROMPT = """请将以下学术论文标题翻译成{target_lan
 
 只返回 JSON 对象，不要添加任何额外文字或 markdown 格式。"""
 
+CLUSTER_LABEL_PROMPT = """基于以下语义簇的论文题目与关键词，
+生成一个简洁的研究方向标签（仅中文，不超过 10 个词）。
+
+## Paper Titles (representative samples):
+{titles}
+
+## Keywords (extracted from paper tags):
+{keywords}
+
+## Instructions:
+1. 识别该簇的共同研究主题或方向
+2. 用中文生成能概括该簇核心的简洁标签
+3. 适当使用领域术语，保持自然流畅；常用英文缩写可直接使用（如 LLM, SAR 等）
+4. 仅返回标签文本，不要附加解释或其他内容
+
+## Output（仅标签，中文）:
+"""
+
+BATCH_CLUSTER_LABEL_PROMPT = """基于以下多个论文簇，为每个簇生成一个简洁的研究方向标签（仅中文，不超过 10 个词）。
+
+## Clusters:
+{clusters_info}
+
+## Instructions:
+1. 为每个簇识别共同的研究主题或方向
+2. 用中文生成能概括每个簇核心的简洁标签
+3. 适当使用领域术语，保持自然流畅；常用英文缩写可直接使用（如 LLM, SAR 等）
+4. 按输入顺序返回 JSON 数组，元素为中文标签字符串
+
+## Output（JSON array of strings, 中文标签）:
+"""
+
 
 __all__ = [
     "BULLET_SUMMARY_PROMPT",
@@ -198,4 +230,6 @@ __all__ = [
     "DOMAIN_CLASSIFICATION_PROMPT",
     "PROFILE_ANALYSIS_PROMPT",
     "TITLE_TRANSLATION_PROMPT",
+    "CLUSTER_LABEL_PROMPT",
+    "BATCH_CLUSTER_LABEL_PROMPT",
 ]

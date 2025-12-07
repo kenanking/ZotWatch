@@ -2,6 +2,15 @@
 
 ZotWatch 是一个基于 Zotero 文库构建个人研究兴趣画像，并持续监测学术信息源的智能文献推荐系统。支持 AI 摘要生成、增量嵌入计算，可在本地手动执行或通过 GitHub Actions 自动运行。
 
+## 致谢
+
+本项目受 [Yorks0n/ZotWatch](https://github.com/Yorks0n/ZotWatch) 启发，并在此基础上进行了修改和调整。
+
+## 部署示例
+
+- **在线演示**: [https://ehehe.cn/zotwatch/](https://ehehe.cn/zotwatch/)
+- **RSS 订阅**: [https://ehehe.cn/zotwatch/feed.xml](https://ehehe.cn/zotwatch/feed.xml)
+
 ## 功能概览
 
 - **Zotero 同步**：通过 Zotero Web API 获取文库条目，支持增量更新

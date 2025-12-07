@@ -115,6 +115,21 @@ class CachingEmbeddingProvider(BaseEmbeddingProvider):
 
         return np.stack(results)
 
+    def encode_query(self, texts: Iterable[str]) -> np.ndarray:
+        """Encode query texts (bypasses cache, uses query-specific encoding).
+
+        Query embeddings are not cached because:
+        1. Typically only one query per run
+        2. LLM-refined queries may vary between runs
+
+        Args:
+            texts: Iterable of query text strings to encode.
+
+        Returns:
+            numpy array of shape (n_texts, dimensions).
+        """
+        return self.provider.encode_query(texts)
+
     def encode_with_ids(
         self,
         texts: Iterable[str],

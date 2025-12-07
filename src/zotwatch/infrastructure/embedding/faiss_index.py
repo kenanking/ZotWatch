@@ -45,6 +45,11 @@ class FaissIndex:
             raise ValidationError(f"Loaded FAISS index from {path} is empty")
         return cls(index.d, index)
 
+    @property
+    def ntotal(self) -> int:
+        """Expose total vector count for compatibility with faiss.Index."""
+        return int(getattr(self.index, "ntotal", 0))
+
     def search(self, vectors: np.ndarray, top_k: int = 10) -> tuple[np.ndarray, np.ndarray]:
         """Search for similar vectors."""
         if vectors.ndim == 1:
