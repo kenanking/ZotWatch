@@ -394,6 +394,7 @@ class ProfileStatsExtractor:
 
         start_date = min(dates).date()
         end_date = max(dates).date()
+        day_span = max((end_date - start_date).days + 1, 1)  # inclusive days
 
         years = end_date.year - start_date.year
         months = end_date.month - start_date.month
@@ -412,7 +413,7 @@ class ProfileStatsExtractor:
             months += 12
 
         if years == 0 and months == 0:
-            return f"{days}天"
+            return f"{day_span}天"
         if years == 0:
             return f"{months}月{days}天"
         return f"{years}年{months}月"
