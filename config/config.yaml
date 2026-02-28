@@ -90,7 +90,7 @@ llm:
   enabled: true
   provider: "kimi"  # Options: "kimi", "openrouter", or "deepseek"
   api_key: "${MOONSHOT_API_KEY}"  # kimi: MOONSHOT_API_KEY
-  model: "kimi-k2.5"
+  model: "kimi-k2-turbo-preview"
   max_tokens: 5120
   temperature: 0.3
   retry:
