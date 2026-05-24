@@ -88,9 +88,9 @@ embedding:
 # LLM configuration for AI summaries and translation
 llm:
   enabled: true
-  provider: "kimi"  # Options: "kimi", "openrouter", or "deepseek"
-  api_key: "${MOONSHOT_API_KEY}"  # kimi: MOONSHOT_API_KEY
-  model: "kimi-k2-turbo-preview"
+  provider: "deepseek"  # Options: "deepseek", "kimi", or "openrouter"
+  api_key: "${DEEPSEEK_API_KEY}"  # deepseek: DEEPSEEK_API_KEY
+  model: "deepseek-v4-flash"  # deepseek-v4-flash (fast) or deepseek-v4-pro (thinking)
   max_tokens: 5120
   temperature: 0.3
   retry:

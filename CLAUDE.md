@@ -208,7 +208,7 @@ Environment variable:
 MOONSHOT_API_KEY=your_moonshot_api_key_here
 ```
 
-#### DeepSeek
+#### DeepSeek (Default)
 
 ```yaml
 # config/config.yaml
@@ -216,7 +216,7 @@ llm:
   enabled: true
   provider: "deepseek"
   api_key: "${DEEPSEEK_API_KEY}"
-  model: "deepseek-chat"  # or "deepseek-reasoner" for reasoning mode
+  model: "deepseek-v4-flash"  # or "deepseek-v4-pro" for thinking mode
   max_tokens: 4096
   temperature: 0.3
 ```
@@ -226,10 +226,10 @@ Environment variable:
 DEEPSEEK_API_KEY=your_deepseek_api_key_here
 ```
 
-**Note on Reasoning Models:**
-- DeepSeek's `deepseek-reasoner` model uses chain-of-thought reasoning
-- Temperature parameter is automatically disabled for reasoning models
-- Reasoning models may require longer timeouts (120s default)
+**Note on Thinking Models:**
+- `deepseek-v4-pro` supports chain-of-thought reasoning via the ``thinking`` parameter
+- Temperature parameter is automatically disabled for thinking models
+- Thinking models may require longer timeouts (120s default)
 
 ### Core Components
 
@@ -248,7 +248,7 @@ Required:
 - `ZOTERO_API_KEY`: Zotero Web API key
 - `ZOTERO_USER_ID`: Zotero user ID
 - `VOYAGE_API_KEY` or `DASHSCOPE_API_KEY`: Embedding provider API key (depending on `embedding.provider` in config.yaml)
-- `MOONSHOT_API_KEY`, `OPENROUTER_API_KEY`, or `DEEPSEEK_API_KEY`: LLM provider API key (at least one required, depending on `llm.provider` in config.yaml)
+- `DEEPSEEK_API_KEY`, `MOONSHOT_API_KEY`, or `OPENROUTER_API_KEY`: LLM provider API key (at least one required, depending on `llm.provider` in config.yaml; DeepSeek is the default)
 
 Optional:
 - `CROSSREF_MAILTO`: Crossref polite pool email

@@ -13,6 +13,7 @@ jobs:
       ZOTERO_API_KEY: ${{ secrets.ZOTERO_API_KEY }}
       ZOTERO_USER_ID: ${{ secrets.ZOTERO_USER_ID }}
       VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
       # Optional
       CROSSREF_MAILTO: ${{ secrets.CROSSREF_MAILTO }}
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}

@@ -13,19 +13,22 @@ logger = logging.getLogger(__name__)
 class DeepSeekClient(BaseHTTPLLMClient):
     """DeepSeek API client.
 
-    Supports both standard models (deepseek-chat) and reasoning models (deepseek-reasoner).
-    Reasoning models automatically disable temperature and use higher max_tokens.
+    Supports standard models (deepseek-v4-flash) and thinking models (deepseek-v4-pro).
+    Thinking models use the ``thinking`` parameter to enable chain-of-thought reasoning.
+
+    Legacy model names (deepseek-chat, deepseek-reasoner) are still accepted but
+    deprecated upstream — they map to v4-flash and v4-pro respectively.
     """
 
     BASE_URL = "https://api.deepseek.com"
-    # Models that use the reasoning/thinking feature
-    REASONING_MODELS = ("deepseek-reasoner",)
-    MIN_REASONING_TOKENS = 8192
+    # Models that support the thinking/reasoning feature
+    THINKING_MODELS = ("deepseek-v4-pro", "deepseek-reasoner")
+    MIN_THINKING_TOKENS = 8192
 
     def __init__(
         self,
         api_key: str,
-        default_model: str = "deepseek-chat",
+        default_model: str = "deepseek-v4-flash",
         timeout: float = 60.0,
         max_retries: int = 3,
         backoff_factor: float = 2.0,
@@ -35,7 +38,7 @@ class DeepSeekClient(BaseHTTPLLMClient):
         Args:
             api_key: DeepSeek API key.
             default_model: Default model to use.
-            timeout: Request timeout in seconds (higher for reasoning models).
+            timeout: Request timeout in seconds (higher for thinking models).
             max_retries: Maximum retry attempts.
             backoff_factor: Exponential backoff factor.
         """
@@ -50,8 +53,11 @@ class DeepSeekClient(BaseHTTPLLMClient):
     @classmethod
     def from_config(cls, config: LLMConfig) -> "DeepSeekClient":
         """Create client from LLM configuration."""
-        # Use longer timeout for reasoning models
-        timeout = 120.0 if "reasoner" in config.model else 60.0
+        # Use longer timeout for thinking models
+        is_thinking = any(
+            config.model.startswith(p) for p in cls.THINKING_MODELS
+        )
+        timeout = 120.0 if is_thinking else 60.0
         return cls(
             api_key=config.api_key,
             default_model=config.model,
@@ -64,9 +70,9 @@ class DeepSeekClient(BaseHTTPLLMClient):
     def name(self) -> str:
         return "deepseek"
 
-    def _is_reasoning_model(self, model: str) -> bool:
-        """Check if the model is a reasoning model."""
-        return any(model.startswith(prefix) for prefix in self.REASONING_MODELS)
+    def _is_thinking_model(self, model: str) -> bool:
+        """Check if the model supports thinking/reasoning mode."""
+        return any(model.startswith(prefix) for prefix in self.THINKING_MODELS)
 
     def _adjust_parameters(
         self,
@@ -74,18 +80,16 @@ class DeepSeekClient(BaseHTTPLLMClient):
         max_tokens: int,
         temperature: float,
     ) -> tuple[str, int, float]:
-        """Adjust parameters for reasoning models.
+        """Adjust parameters for thinking models.
 
-        Reasoning models don't support temperature/top_p parameters,
-        and need higher max_tokens for chain-of-thought output.
+        Thinking models need higher max_tokens for chain-of-thought output.
+        Temperature is still passed through (excluded in _build_payload for thinking models).
         """
-        if self._is_reasoning_model(model):
-            # Reasoning models ignore temperature, but we still pass it through
-            # (will be excluded in _build_payload)
-            if max_tokens < self.MIN_REASONING_TOKENS:
-                max_tokens = self.MIN_REASONING_TOKENS
+        if self._is_thinking_model(model):
+            if max_tokens < self.MIN_THINKING_TOKENS:
+                max_tokens = self.MIN_THINKING_TOKENS
                 logger.debug(
-                    "Increased max_tokens to %d for reasoning model %s",
+                    "Increased max_tokens to %d for thinking model %s",
                     max_tokens,
                     model,
                 )
@@ -107,8 +111,8 @@ class DeepSeekClient(BaseHTTPLLMClient):
     ) -> dict:
         """Build JSON payload for DeepSeek API.
 
-        Note: For reasoning models, temperature and top_p are not supported
-        and will not be included in the payload.
+        Thinking models (deepseek-v4-pro) get the ``thinking`` parameter
+        and omit temperature/top_p. Standard models use temperature as usual.
         """
         payload = {
             "model": model,
@@ -116,8 +120,9 @@ class DeepSeekClient(BaseHTTPLLMClient):
             "max_tokens": max_tokens,
         }
 
-        # Reasoning models don't support temperature/top_p parameters
-        if not self._is_reasoning_model(model):
+        if self._is_thinking_model(model):
+            payload["thinking"] = {"type": "enabled"}
+        else:
             payload["temperature"] = temperature
 
         return payload
@@ -125,7 +130,7 @@ class DeepSeekClient(BaseHTTPLLMClient):
     def _extract_response(self, data: dict, model: str) -> LLMResponse:
         """Extract LLMResponse from DeepSeek API response."""
         message = data["choices"][0]["message"]
-        # Extract content, ignoring reasoning_content for reasoning models
+        # Extract content, ignoring reasoning_content for thinking models
         content = message.get("content", "")
         tokens_used = data.get("usage", {}).get("total_tokens", 0)
 
@@ -138,8 +143,8 @@ class DeepSeekClient(BaseHTTPLLMClient):
     def available_models(self) -> list[str]:
         """List available DeepSeek models."""
         return [
-            "deepseek-chat",
-            "deepseek-reasoner",
+            "deepseek-v4-flash",
+            "deepseek-v4-pro",
         ]
 
 

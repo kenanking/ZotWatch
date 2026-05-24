@@ -224,9 +224,9 @@ class LLMConfig(BaseModel):
         enabled: bool = False
 
     enabled: bool = True
-    provider: str = "openrouter"
+    provider: str = "deepseek"
     api_key: str = ""
-    model: str = "deepseek/deepseek-chat-v3-0324"
+    model: str = "deepseek-v4-flash"
     max_tokens: int = 1024
     temperature: float = 0.3
     retry: RetryConfig = Field(default_factory=RetryConfig)
