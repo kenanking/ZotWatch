@@ -127,7 +127,3 @@ jobs:
           export TZ=${{ env.TIMEZONE }}
           git commit -m "ZotWatch report updated: $(date '+%Y-%m-%d %H:%M:%S %Z')" || echo "No changes to commit"
           git push origin main
-
-      - name: Cleanup SSH Key
-        if: always()
-        run: rm -f ~/.ssh/id_rsa
