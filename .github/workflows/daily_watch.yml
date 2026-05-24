@@ -95,10 +95,6 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan github.com >> ~/.ssh/known_hosts
 
-      - name: Cleanup SSH Key
-        if: always()
-        run: rm -f ~/.ssh/id_rsa
-
       - name: Setup Git Config
         run: |
           git config --global user.name "${{ env.GIT_USER_NAME }}"
@@ -131,3 +127,7 @@ jobs:
           export TZ=${{ env.TIMEZONE }}
           git commit -m "ZotWatch report updated: $(date '+%Y-%m-%d %H:%M:%S %Z')" || echo "No changes to commit"
           git push origin main
+
+      - name: Cleanup SSH Key
+        if: always()
+        run: rm -f ~/.ssh/id_rsa
