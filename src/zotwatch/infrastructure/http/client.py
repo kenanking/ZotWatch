@@ -28,7 +28,7 @@ class HTTPClient:
         self.timeout = timeout
         self.max_retries = max_retries
         self.backoff_factor = backoff_factor
-        self.retryable_statuses = retryable_statuses or {429}
+        self.retryable_statuses = retryable_statuses or {429, 502, 503}
 
     def get(
         self,
@@ -74,6 +74,12 @@ class HTTPClient:
                         time.sleep(retry_after)
                         delay *= self.backoff_factor
                         continue
+                    # All retries exhausted for retryable status
+                    raise NetworkError(
+                        f"{method} {url}: failed after {self.max_retries} retries "
+                        f"(HTTP {response.status_code})",
+                        url=url,
+                    )
                 return response
             except requests.exceptions.RequestException as e:
                 last_exception = e

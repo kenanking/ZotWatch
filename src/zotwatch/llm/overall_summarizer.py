@@ -45,9 +45,8 @@ class OverallSummarizer:
         if not works:
             return OverallSummary(
                 section_type=section_type,
-                summary_text="No papers available for summary.",
+                overview="No papers available for summary.",
                 paper_count=0,
-                key_themes=[],
                 generated_at=utc_now(),
                 model_used="none",
                 tokens_used=0,
@@ -82,8 +81,10 @@ class OverallSummarizer:
         """Format papers list for prompt."""
         lines = []
         for i, work in enumerate(works[:max_papers], 1):
-            abstract_snippet = (work.abstract or "")[:200]
-            lines.append(f"{i}. {work.title}\n   摘要片段：{abstract_snippet}...")
+            abstract = work.abstract or ""
+            abstract_snippet = abstract[:200]
+            suffix = "..." if len(abstract) > 200 else ""
+            lines.append(f"{i}. {work.title}\n   摘要片段：{abstract_snippet}{suffix}")
 
         if len(works) > max_papers:
             lines.append(f"...还有 {len(works) - max_papers} 篇论文")

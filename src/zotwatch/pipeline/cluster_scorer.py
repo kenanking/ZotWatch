@@ -102,35 +102,33 @@ class ClusterScorer:
         # Compute similarities to all centroids (N x K)
         similarities = np.dot(vectors_norm, self.centroids_norm.T)
 
-        scores: list[ClusterScore] = []
+        # Vectorized macro score computation: N x K element-wise multiply
+        raw_macro_matrix = similarities * self.log_effective_sizes  # (N, K)
+        best_macro_indices = np.argmax(raw_macro_matrix, axis=1)  # (N,)
+        raw_macro_scores = raw_macro_matrix[
+            np.arange(similarities.shape[0]), best_macro_indices
+        ]  # (N,)
 
+        # Normalize macro scores
+        if self.max_log_effective_size > 0:
+            macro_scores = raw_macro_scores / self.max_log_effective_size
+        else:
+            macro_scores = np.zeros(similarities.shape[0])
+
+        # Build per-candidate ClusterScore objects
+        scores: list[ClusterScore] = []
         for i in range(similarities.shape[0]):
             sims = similarities[i]
-            # Build (cluster_id, similarity) pairs
             cluster_sims = [(self.cluster_ids[j], float(sims[j])) for j in range(len(sims))]
             cluster_sims.sort(key=lambda x: x[1], reverse=True)
 
-            # Compute macro score: S_raw_macro = max_k(sim_k * ln(1 + E_k))
-            raw_macro_scores = sims * self.log_effective_sizes
-            best_macro_idx = int(np.argmax(raw_macro_scores))
-            raw_macro_score = float(raw_macro_scores[best_macro_idx])
-
-            # Normalize macro score by max(ln(1 + E_k)) to get [0, 1] range
-            if self.max_log_effective_size > 0:
-                macro_score = raw_macro_score / self.max_log_effective_size
-            else:
-                macro_score = 0.0
-
-            # Get top cluster from macro scoring perspective
-            macro_top_cluster_id = self.cluster_ids[best_macro_idx]
-
             scores.append(
                 ClusterScore(
-                    final_score=macro_score,  # Use macro score as the final cluster similarity
-                    cluster_similarities=cluster_sims[:5],  # Top 5 for debugging
-                    top_cluster_id=macro_top_cluster_id,  # Use macro-best cluster
-                    macro_score=macro_score,
-                    raw_macro_score=raw_macro_score,
+                    final_score=float(macro_scores[i]),
+                    cluster_similarities=cluster_sims[:5],
+                    top_cluster_id=self.cluster_ids[int(best_macro_indices[i])],
+                    macro_score=float(macro_scores[i]),
+                    raw_macro_score=float(raw_macro_scores[i]),
                 )
             )
 

@@ -22,11 +22,18 @@ class FaissIndex:
 
     @classmethod
     def from_vectors(cls, vectors: np.ndarray) -> tuple["FaissIndex", np.ndarray]:
-        """Create index from vector array."""
+        """Create index from vector array.
+
+        Vectors are L2-normalized before adding to the index so that
+        IndexFlatIP (inner product) produces cosine similarity scores.
+        """
         if vectors.ndim != 2:
             raise ValidationError(f"Vectors must be a 2D array, got {vectors.ndim}D")
         dim = vectors.shape[1]
         instance = cls(dim)
+        # L2-normalize so inner product equals cosine similarity
+        vectors = vectors.astype("float32")
+        faiss.normalize_L2(vectors)
         instance.index.add(vectors)
         return instance, np.arange(vectors.shape[0])
 
@@ -51,10 +58,18 @@ class FaissIndex:
         return int(getattr(self.index, "ntotal", 0))
 
     def search(self, vectors: np.ndarray, top_k: int = 10) -> tuple[np.ndarray, np.ndarray]:
-        """Search for similar vectors."""
+        """Search for similar vectors.
+
+        Returns empty arrays if the index is empty.
+        """
+        if self.ntotal == 0:
+            n = 1 if vectors.ndim == 1 else vectors.shape[0]
+            return np.zeros((n, top_k), dtype=np.float32), -np.ones((n, top_k), dtype=np.int64)
         if vectors.ndim == 1:
             vectors = vectors.reshape(1, -1)
-        return self.index.search(vectors.astype("float32"), top_k)
+        vectors = vectors.astype("float32")
+        faiss.normalize_L2(vectors)
+        return self.index.search(vectors, top_k)
 
 
 __all__ = ["FaissIndex"]

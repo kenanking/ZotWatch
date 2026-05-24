@@ -61,6 +61,7 @@ def with_retry(
     backoff_factor: float = 2.0,
     initial_delay: float = 1.0,
     jitter: float = DEFAULT_JITTER,
+    from_instance: bool = False,
 ) -> Callable[[Callable[P, T]], Callable[P, T]]:
     """Decorator for retry logic with exponential backoff and jitter.
 
@@ -69,6 +70,8 @@ def with_retry(
         backoff_factor: Multiplier for delay between retries.
         initial_delay: Initial delay before first retry in seconds.
         jitter: Random jitter range as fraction of delay (default 0.1 = ±10%).
+        from_instance: If True, read max_attempts and backoff_factor from
+            the first argument (self) as self.max_retries and self.backoff_factor.
 
     Returns:
         Decorated function with retry logic.
@@ -80,12 +83,22 @@ def with_retry(
     def decorator(func: Callable[P, T]) -> Callable[P, T]:
         @functools.wraps(func)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+            # Allow instance-level override of retry parameters
+            attempts = max_attempts
+            backoff = backoff_factor
+            if from_instance and args:
+                self = args[0]
+                if hasattr(self, "max_retries"):
+                    attempts = self.max_retries
+                if hasattr(self, "backoff_factor"):
+                    backoff = self.backoff_factor
+
             last_exception: Exception | None = None
             last_status_code: int | None = None
             delay = initial_delay
             func_name = func.__qualname__
 
-            for attempt in range(max_attempts):
+            for attempt in range(attempts):
                 try:
                     return func(*args, **kwargs)
                 except requests.exceptions.HTTPError as e:
@@ -108,7 +121,7 @@ def with_retry(
                         "%s: attempt %d/%d failed with HTTP %s, retrying in %.1fs",
                         func_name,
                         attempt + 1,
-                        max_attempts,
+                        attempts,
                         status_code or "unknown",
                         delay,
                     )
@@ -118,19 +131,19 @@ def with_retry(
                         "%s: attempt %d/%d failed with %s, retrying in %.1fs",
                         func_name,
                         attempt + 1,
-                        max_attempts,
+                        attempts,
                         type(e).__name__,
                         delay,
                     )
 
-                if attempt < max_attempts - 1:
+                if attempt < attempts - 1:
                     time.sleep(_add_jitter(delay, jitter))
-                    delay *= backoff_factor
+                    delay *= backoff
 
             # All retries exhausted - raise NetworkError with context
             error_detail = f"HTTP {last_status_code}" if last_status_code else type(last_exception).__name__
             raise NetworkError(
-                f"{func_name}: failed after {max_attempts} attempts ({error_detail})",
+                f"{func_name}: failed after {attempts} attempts ({error_detail})",
             ) from last_exception
 
         return wrapper

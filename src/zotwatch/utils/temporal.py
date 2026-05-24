@@ -8,7 +8,7 @@ current research interests.
 import math
 from datetime import datetime
 
-from zotwatch.utils.datetime import utc_now
+from zotwatch.utils.datetime import ensure_aware, utc_now
 
 
 def compute_temporal_weight(
@@ -38,6 +38,10 @@ def compute_temporal_weight(
         return 1.0  # Treat missing date as recently added
 
     ref_time = reference_time or utc_now()
+
+    # Ensure both datetimes are timezone-aware to avoid TypeError
+    ref_time = ensure_aware(ref_time)
+    date_added = ensure_aware(date_added)
 
     # Compute age in days
     age_delta = ref_time - date_added
@@ -97,6 +101,11 @@ def compute_item_age_days(
         return 0.0
 
     ref_time = reference_time or utc_now()
+
+    # Ensure both datetimes are timezone-aware to avoid TypeError
+    ref_time = ensure_aware(ref_time)
+    date_added = ensure_aware(date_added)
+
     age_delta = ref_time - date_added
     return max(0.0, age_delta.total_seconds() / 86400)
 

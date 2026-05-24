@@ -111,16 +111,26 @@ class KimiClient(BaseHTTPLLMClient):
 
     def _extract_response(self, data: dict, model: str) -> LLMResponse:
         """Extract LLMResponse from Kimi API response."""
-        message = data["choices"][0]["message"]
-        # Extract content, ignoring reasoning_content for thinking models
-        content = message.get("content", "")
-        tokens_used = data.get("usage", {}).get("total_tokens", 0)
+        try:
+            choices = data.get("choices")
+            if not choices or not isinstance(choices, list):
+                raise ValueError(f"Empty or invalid 'choices' in response: {data}")
+            message = choices[0]["message"]
+            content = message.get("content", "")
+            tokens_used = data.get("usage", {}).get("total_tokens", 0)
 
-        return LLMResponse(
-            content=content,
-            model=data.get("model", model),
-            tokens_used=tokens_used,
-        )
+            return LLMResponse(
+                content=content,
+                model=data.get("model", model),
+                tokens_used=tokens_used,
+            )
+        except (KeyError, IndexError, ValueError) as e:
+            from zotwatch.core.exceptions import LLMError
+
+            raise LLMError(
+                provider="kimi",
+                message=f"API returned malformed response: {e}",
+            ) from e
 
     def available_models(self) -> list[str]:
         """List available Kimi models."""

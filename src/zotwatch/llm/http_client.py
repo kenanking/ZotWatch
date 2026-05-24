@@ -140,7 +140,7 @@ class BaseHTTPLLMClient(BaseLLMProvider):
             temperature=temperature,
         )
 
-    @with_retry(max_attempts=3, backoff_factor=2.0, initial_delay=1.0)
+    @with_retry(max_attempts=3, backoff_factor=2.0, initial_delay=1.0, from_instance=True)
     def _complete_with_retry(
         self,
         prompt: str,

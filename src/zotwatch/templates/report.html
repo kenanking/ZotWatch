@@ -221,7 +221,7 @@
         new Chart(domainsCtx, {
           type: 'bar',
           data: {
-            labels: [{% for d in researcher_profile.domains[:8] %}'{{ d.domain }}'{% if not loop.last %}, {% endif %}{% endfor %}],
+            labels: [{% for d in researcher_profile.domains[:8] %}{{ d.domain|tojson }}{% if not loop.last %}, {% endif %}{% endfor %}],
             datasets: [{
               data: [{% for d in researcher_profile.domains[:8] %}{{ d.paper_count }}{% if not loop.last %}, {% endif %}{% endfor %}],
               backgroundColor: 'rgba(37, 99, 235, 0.7)',
@@ -258,7 +258,7 @@
       {% if researcher_profile.quarterly_trends %}
       const trendsCtx = document.getElementById('trendsChart');
       if (trendsCtx) {
-        const trends = [{% for t in researcher_profile.quarterly_trends[-12:] %}{ q: '{{ t.quarter }}', c: {{ t.paper_count }} }{% if not loop.last %}, {% endif %}{% endfor %}];
+        const trends = [{% for t in researcher_profile.quarterly_trends[-12:] %}{ q: {{ t.quarter|tojson }}, c: {{ t.paper_count }} }{% if not loop.last %}, {% endif %}{% endfor %}];
         const monthColors = [
           { bg: 'rgba(59, 130, 246, 0.7)', border: 'rgba(59, 130, 246, 1)' },
           { bg: 'rgba(16, 185, 129, 0.7)', border: 'rgba(16, 185, 129, 1)' },

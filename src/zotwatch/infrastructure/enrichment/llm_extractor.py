@@ -80,12 +80,13 @@ class LLMAbstractExtractor:
         """
         # 1. Try og:description meta tag first (often has full abstract)
         og_match = re.search(
-            r'<meta[^>]*property=["\']og:description["\'][^>]*content=["\']([^"\']+)["\']',
+            r'<meta[^>]*(?:property=["\']og:description["\'][^>]*content=["\']([^"\']+)["\']'
+            r'|content=["\']([^"\']+)["\'][^>]*property=["\']og:description["\'])',
             html,
             re.IGNORECASE,
         )
         if og_match:
-            og_abstract = og_match.group(1).strip()
+            og_abstract = (og_match.group(1) or og_match.group(2)).strip()
             # Verify it looks like an abstract (not just site description)
             if len(og_abstract) > 200 and not og_abstract.startswith("IEEE"):
                 logger.debug("Found abstract in og:description (%d chars)", len(og_abstract))
@@ -93,7 +94,8 @@ class LLMAbstractExtractor:
 
         # 2. Try description meta tag
         desc_match = re.search(
-            r'<meta[^>]*name=["\']description["\'][^>]*content=["\']([^"\']+)["\']',
+            r'<meta[^>]*(?:name=["\']description["\'][^>]*content=["\']([^"\']+)["\']'
+            r'|content=["\']([^"\']+)["\'][^>]*name=["\']description["\'])',
             html,
             re.IGNORECASE,
         )
@@ -123,12 +125,12 @@ class LLMAbstractExtractor:
         for pattern in patterns:
             match = re.search(pattern, html, re.IGNORECASE | re.DOTALL)
             if match:
-                section = match.group(0)
+                section = match.group(1) if match.lastindex else match.group(0)
                 # Clean the extracted section
                 section = re.sub(r"<[^>]+>", " ", section)  # Remove HTML tags
                 section = re.sub(r"\s+", " ", section).strip()
                 # Skip if it contains "Show More" (truncated)
-                if "Show More" in section or "show more" in section.lower():
+                if "show more" in section.lower():
                     logger.debug("Skipping truncated abstract div, will try meta tags")
                     continue
                 if len(section) > 100:  # Minimum meaningful abstract length

@@ -168,7 +168,7 @@ class ProfileBuilder:
                 np.mean(temporal_weights),
             )
 
-        clustered_profile = clusterer.cluster(vectors.copy(), items, temporal_weights=temporal_weights)
+        clustered_profile = clusterer.cluster(vectors, items, temporal_weights=temporal_weights)
 
         if clustered_profile.valid_cluster_count == 0:
             logger.info("No valid clusters created (library may be too small)")

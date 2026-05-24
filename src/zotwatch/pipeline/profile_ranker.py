@@ -235,6 +235,45 @@ class ProfileRanker:
 
         return float(micro_score)
 
+    def _compute_micro_scores_batch(
+        self,
+        vectors: np.ndarray,
+        k: int = 5,
+    ) -> np.ndarray:
+        """Compute micro scores for all candidates in a single FAISS batch search.
+
+        Args:
+            vectors: Candidate embeddings (N, dim).
+            k: Number of nearest neighbors.
+
+        Returns:
+            Array of micro scores (N,).
+        """
+        if self.index is None or self.index.ntotal == 0:
+            return np.zeros(vectors.shape[0])
+
+        # Single batch search for all candidates
+        distances, indices = self.index.search(vectors, top_k=k)  # (N, k)
+
+        # Build temporal weight matrix (N, k)
+        n_candidates = vectors.shape[0]
+        weight_matrix = np.ones((n_candidates, k), dtype=np.float32)
+        for i in range(n_candidates):
+            for j in range(k):
+                idx = int(indices[i, j])
+                if idx >= 0:
+                    weight_matrix[i, j] = self._item_temporal_weights.get(idx, 1.0)
+
+        # Mask invalid neighbors (FAISS returns -1 for missing)
+        valid_mask = indices >= 0  # (N, k)
+
+        # Weighted average: S_micro = Σ(sim * w) / (Σw + ε)
+        weighted_sims = distances * weight_matrix * valid_mask
+        weight_sums = weight_matrix * valid_mask
+        micro_scores = weighted_sims.sum(axis=1) / (weight_sums.sum(axis=1) + 1e-8)
+
+        return micro_scores
+
     def _compute_thresholds(self, scores: list[float]) -> ComputedThresholds:
         """Compute thresholds based on configuration mode.
 
@@ -395,11 +434,11 @@ class ProfileRanker:
                 knn_k,
             )
 
-            for i, candidate in enumerate(candidates):
-                # Micro score: k-NN with temporal weighting
-                micro = self._compute_micro_score(vectors[i], k=knn_k)
+            # Batch micro scores: single FAISS search for all candidates
+            micro_scores = self._compute_micro_scores_batch(vectors, k=knn_k)
 
-                # Macro score: cluster-based (already normalized)
+            for i, candidate in enumerate(candidates):
+                micro = float(micro_scores[i])
                 macro = cluster_scores[i].macro_score
                 top_cluster = cluster_scores[i].top_cluster_id
 
