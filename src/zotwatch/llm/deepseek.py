@@ -22,7 +22,7 @@ class DeepSeekClient(BaseHTTPLLMClient):
 
     BASE_URL = "https://api.deepseek.com"
     # Models that support the thinking/reasoning feature
-    THINKING_MODELS = ("deepseek-v4-pro", "deepseek-reasoner")
+    THINKING_MODELS = ("deepseek-v4-pro", "deepseek-v4-flash", "deepseek-reasoner")
     MIN_THINKING_TOKENS = 8192
 
     def __init__(

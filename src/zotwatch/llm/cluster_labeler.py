@@ -48,16 +48,14 @@ class ClusterLabeler:
             label = response.content.strip()
             # Remove quotes if present
             label = label.strip("\"'")
-            logger.debug("Generated label for cluster %d: %s", cluster.cluster_id, label)
-            return label
+            if label:
+                logger.debug("Generated label for cluster %d: %s", cluster.cluster_id, label)
+                return label
+            logger.warning("LLM returned empty label for cluster %d", cluster.cluster_id)
+            return self._fallback_label(cluster)
         except Exception as e:
             logger.warning("Failed to generate label for cluster %d: %s", cluster.cluster_id, e)
-            # Fallback: use first keyword or first title word
-            if cluster.keywords:
-                return cluster.keywords[0]
-            elif cluster.representative_titles:
-                return cluster.representative_titles[0][:30] + "..."
-            return f"Cluster {cluster.cluster_id}"
+            return self._fallback_label(cluster)
 
     def label_clusters_batch(self, clusters: list[ClusterInfo]) -> list[str]:
         """Generate labels for multiple clusters in a single LLM call.
@@ -92,6 +90,18 @@ class ClusterLabeler:
             logger.warning("Batch labeling failed, falling back to individual calls: %s", e)
             return [self.label_cluster(c) for c in clusters]
 
+    @staticmethod
+    def _fallback_label(cluster: ClusterInfo) -> str:
+        """Generate a fallback label when LLM is unavailable.
+
+        Prefers keywords, then representative titles, then generic Chinese label.
+        """
+        if cluster.keywords:
+            return cluster.keywords[0]
+        if cluster.representative_titles:
+            return cluster.representative_titles[0][:30]
+        return f"聚类 {cluster.cluster_id}"
+
     def _parse_batch_response(self, content: str, expected_count: int) -> list[str]:
         """Parse batch labeling LLM response.
 
@@ -112,7 +122,10 @@ class ClusterLabeler:
         try:
             labels = json.loads(content)
             if isinstance(labels, list) and len(labels) == expected_count:
-                return [str(label).strip("\"'") for label in labels]
+                cleaned = [str(label).strip("\"'") for label in labels]
+                # Only accept if all labels are non-empty
+                if all(cleaned):
+                    return cleaned
         except json.JSONDecodeError:
             pass
 
@@ -129,7 +142,7 @@ class ClusterLabeler:
 
         # Pad with generic labels if needed
         while len(labels) < expected_count:
-            labels.append(f"Cluster {len(labels) + 1}")
+            labels.append(f"聚类 {len(labels) + 1}")
 
         return labels[:expected_count]
 

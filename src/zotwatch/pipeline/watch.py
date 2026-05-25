@@ -5,6 +5,7 @@ into a single, testable pipeline class.
 """
 
 import logging
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -341,10 +342,13 @@ class WatchPipeline:
         cached_profile = storage.get_profile_analysis(current_hash)
 
         if cached_profile:
-            # Check if LLM model changed - need to regenerate AI insights
-            # Only regenerate if LLM is enabled and model differs from cached
+            # Check if LLM model changed or AI insights are missing - need to regenerate
             current_model = self.settings.llm.model if self.settings.llm.enabled else None
-            should_regenerate = self.settings.llm.enabled and cached_profile.model_used != current_model
+            should_regenerate = self.settings.llm.enabled and (
+                cached_profile.model_used != current_model
+                or not cached_profile.domains  # Regenerate if domains are empty
+                or not cached_profile.insights  # Regenerate if insights are missing
+            )
             if not should_regenerate:
                 progress("profile", "Using cached profile analysis")
                 # Still need to load clustered profile even with cached base profile
@@ -427,8 +431,12 @@ class WatchPipeline:
         """Generate LLM labels for clusters."""
         from zotwatch.llm.cluster_labeler import ClusterLabeler
 
-        # Only label clusters that don't have labels yet
-        unlabeled = [c for c in clustered.clusters if not c.label]
+        # Label clusters that don't have labels yet, or have fallback labels
+        fallback_pattern = re.compile(r"^聚类 \d+$")
+        unlabeled = [
+            c for c in clustered.clusters
+            if not c.label or fallback_pattern.match(c.label)
+        ]
         if not unlabeled:
             return
 
